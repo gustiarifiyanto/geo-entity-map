@@ -54,6 +54,7 @@ export function EntityDetailPanel({ entity, onClose, onEdit, onDelete }: EntityD
           <span className="font-mono">
             {entity.latitude.toFixed(6)}, {entity.longitude.toFixed(6)}
           </span>
+          <p className="mt-1 text-xs text-gray-500">Drag the highlighted pin on the map to move it.</p>
         </Field>
         <Field label="Description">
           {entity.description || <span className="text-gray-400">No description</span>}

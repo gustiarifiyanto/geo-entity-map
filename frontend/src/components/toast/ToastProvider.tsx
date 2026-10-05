@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ToastContext, type ToastApi } from './context'
+import { ToastContext, type ToastAction, type ToastApi, type ToastOptions } from './context'
 
 type Variant = 'success' | 'error'
 
@@ -7,9 +7,12 @@ interface Toast {
   id: number
   message: string
   variant: Variant
+  action?: ToastAction
 }
 
 const DURATION_MS: Record<Variant, number> = { success: 3000, error: 6000 }
+/** Toasts with an action (e.g. Undo) stay longer so there is time to use it. */
+const ACTION_DURATION_MS = 8000
 const MAX_VISIBLE = 3
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -21,18 +24,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const show = useCallback(
-    (message: string, variant: Variant) => {
+    (message: string, variant: Variant, options: ToastOptions = {}) => {
       const id = ++nextId.current
-      setToasts((current) => [...current.slice(-(MAX_VISIBLE - 1)), { id, message, variant }])
-      window.setTimeout(() => dismiss(id), DURATION_MS[variant])
+      const toast: Toast = { id, message, variant, action: options.action }
+      setToasts((current) => [...current.slice(-(MAX_VISIBLE - 1)), toast])
+      window.setTimeout(() => dismiss(id), options.action ? ACTION_DURATION_MS : DURATION_MS[variant])
     },
     [dismiss],
   )
 
   const api = useMemo<ToastApi>(
     () => ({
-      success: (message) => show(message, 'success'),
-      error: (message) => show(message, 'error'),
+      success: (message, options) => show(message, 'success', options),
+      error: (message, options) => show(message, 'error', options),
     }),
     [show],
   )
@@ -52,6 +56,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             }`}
           >
             <span className="flex-1">{toast.message}</span>
+            {toast.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  dismiss(toast.id)
+                  toast.action?.onClick()
+                }}
+                className="font-semibold underline underline-offset-2 hover:no-underline"
+              >
+                {toast.action.label}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => dismiss(toast.id)}

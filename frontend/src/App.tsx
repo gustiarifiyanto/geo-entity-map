@@ -52,11 +52,24 @@ function App() {
 
   const handleMove = useCallback(
     (id: string, latitude: number, longitude: number) => {
-      const name = entities.data?.find((e) => e.id === id)?.name ?? 'Entity'
+      const original = entities.data?.find((e) => e.id === id)
+      if (!original) return
+      const { name } = original
+      const previous = { latitude: original.latitude, longitude: original.longitude }
+
+      const undo = () =>
+        updateLocation.mutate(
+          { id, location: previous },
+          {
+            onSuccess: () => toast.success(`"${name}" moved back.`),
+            onError: (error) => toast.error(`Could not undo the move of "${name}": ${error.message}`),
+          },
+        )
+
       updateLocation.mutate(
         { id, location: { latitude, longitude } },
         {
-          onSuccess: () => toast.success(`"${name}" moved.`),
+          onSuccess: () => toast.success(`"${name}" moved.`, { action: { label: 'Undo', onClick: undo } }),
           // The hook has already restored the previous position.
           onError: (error) => toast.error(`Could not move "${name}": ${error.message}`),
         },
@@ -74,7 +87,7 @@ function App() {
         selectedId={selectedId}
         onSelect={handleSelect}
         onMapClick={handleMapClick}
-        markersDraggable={!isFormOpen}
+        markersDraggable={panel.kind === 'view'}
         onMove={handleMove}
         draft={panel.kind === 'create' ? panel : null}
         onDraftMove={handleMapClick}

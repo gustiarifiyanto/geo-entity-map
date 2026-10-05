@@ -18,7 +18,11 @@ interface EntityMapProps {
   selectedId: string | null
   onSelect: (id: string) => void
   onMapClick: (latitude: number, longitude: number) => void
-  /** Whether saved markers can be dragged to a new location. */
+  /**
+   * Whether the selected marker can be dragged to a new location. Only the
+   * selected marker is ever draggable, so panning the map cannot move an
+   * entity by accident.
+   */
   markersDraggable: boolean
   onMove: (id: string, latitude: number, longitude: number) => void
   /** Location of an entity being created (not saved yet), shown as a draggable pin. */
@@ -60,7 +64,7 @@ export function EntityMap({
           position={[entity.latitude, entity.longitude]}
           icon={markerIcon(entity.status, entity.id === selectedId)}
           zIndexOffset={entity.id === selectedId ? 1000 : 0}
-          draggable={markersDraggable}
+          draggable={markersDraggable && entity.id === selectedId}
           eventHandlers={{
             click: () => onSelect(entity.id),
             dragend: (event) => {
