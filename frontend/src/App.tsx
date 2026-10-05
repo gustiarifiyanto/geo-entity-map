@@ -1,26 +1,58 @@
+import { useCallback, useState } from 'react'
+import { EntityDetailPanel } from './features/entities/EntityDetailPanel'
+import { EntityMap } from './features/entities/EntityMap'
+import { MapHeader } from './features/entities/MapHeader'
 import { useEntities, useMeta } from './features/entities/hooks'
 
-// Temporary status screen to verify the data layer; replaced by the map in the next step.
 function App() {
   const meta = useMeta()
   const entities = useEntities()
-  const error = meta.error ?? entities.error
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  // Derived from the query cache, so the panel closes if the entity disappears.
+  const selected = entities.data?.find((e) => e.id === selectedId) ?? null
+  const closeDetail = useCallback(() => setSelectedId(null), [])
+  const error = entities.error ?? meta.error
 
   return (
-    <main className="flex h-full flex-col items-center justify-center gap-2 text-center">
-      <h1 className="text-2xl font-semibold">Geo Entity Map</h1>
-      {error ? (
-        <p className="text-red-600">{error.message}</p>
-      ) : meta.data && entities.data ? (
-        <>
-          <p>{entities.data.length} entities loaded</p>
-          <p className="text-sm text-gray-500">types: {meta.data.types.join(', ')}</p>
-          <p className="text-sm text-gray-500">statuses: {meta.data.statuses.join(', ')}</p>
-        </>
-      ) : (
-        <p className="text-gray-500">Loading…</p>
+    <div className="relative h-full">
+      <EntityMap
+        entities={entities.data ?? []}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        onMapClick={closeDetail}
+      />
+
+      <div className="pointer-events-none absolute inset-x-3 top-3 z-[1000] flex flex-col items-start gap-2">
+        <div className="pointer-events-auto">
+          <MapHeader entityCount={entities.data?.length} statuses={meta.data?.statuses ?? []} />
+        </div>
+        {error && (
+          <div
+            role="alert"
+            className="pointer-events-auto flex items-center gap-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 shadow ring-1 ring-red-200"
+          >
+            <span>{error.message}</span>
+            <button
+              type="button"
+              onClick={() => {
+                void entities.refetch()
+                void meta.refetch()
+              }}
+              className="font-medium underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+      </div>
+
+      {selected && (
+        <div className="absolute inset-x-3 bottom-3 z-[1000] max-h-[60%] sm:inset-x-auto sm:top-3 sm:right-3 sm:bottom-3 sm:max-h-none sm:w-96">
+          <EntityDetailPanel entity={selected} onClose={closeDetail} />
+        </div>
       )}
-    </main>
+    </div>
   )
 }
 

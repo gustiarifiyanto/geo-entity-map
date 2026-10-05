@@ -5,3 +5,15 @@ body,
 #root {
   height: 100%;
 }
+
+/* Pin markers (see features/entities/markerIcon.ts): drop Leaflet's default
+   white divIcon box. */
+.entity-marker {
+  background: none;
+  border: none;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35));
+}
+
+.entity-marker--selected {
+  filter: drop-shadow(0 3px 6px rgb(0 0 0 / 0.45));
+}

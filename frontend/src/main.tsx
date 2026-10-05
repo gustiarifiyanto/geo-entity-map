@@ -3,6 +3,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ApiError } from './api/client'
 import App from './App.tsx'
+import 'leaflet/dist/leaflet.css'
 import './index.css'
 
 const queryClient = new QueryClient({
