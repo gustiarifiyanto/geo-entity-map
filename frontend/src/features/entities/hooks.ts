@@ -10,6 +10,8 @@ import type { EntityFilter, EntityInput } from '../../types/entity'
 
 export const metaKey = ['meta'] as const
 
+// Mutation onSuccess handlers return the invalidation promise, so mutateAsync
+// resolves only after the list has been refetched.
 export const entityKeys = {
   all: ['entities'] as const,
   list: (filter: EntityFilter) => [...entityKeys.all, 'list', filter] as const,

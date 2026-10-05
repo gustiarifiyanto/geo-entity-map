@@ -8,7 +8,7 @@ export const NAME_MAX = 100
 export const DESCRIPTION_MAX = 500
 
 /** Counts Unicode code points, like Go's rune count (not UTF-16 units). */
-const charCount = (s: string) => [...s].length
+export const charCount = (s: string) => [...s].length
 
 const maxChars = (max: number) =>
   [(s: string) => charCount(s) <= max, `must be at most ${max} characters`] as const
@@ -17,9 +17,14 @@ const coordinate = (limit: number) => {
   const range = `must be between -${limit} and ${limit}`
   return z
     .number({
-      // An empty number input yields NaN (valueAsNumber).
+      // An empty number input yields NaN (valueAsNumber); ±Infinity is a range
+      // error, matching the backend message.
       error: (issue) =>
-        issue.input === undefined || Number.isNaN(issue.input) ? 'is required' : 'must be a number',
+        issue.input === undefined || Number.isNaN(issue.input)
+          ? 'is required'
+          : typeof issue.input === 'number'
+            ? range
+            : 'must be a number',
     })
     .min(-limit, range)
     .max(limit, range)

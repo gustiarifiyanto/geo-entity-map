@@ -1,4 +1,4 @@
-import { latLngBounds } from 'leaflet'
+import { latLngBounds, type Marker as LeafletMarker } from 'leaflet'
 import { useEffect, useRef } from 'react'
 import {
   MapContainer,
@@ -11,16 +11,26 @@ import {
 } from 'react-leaflet'
 import type { Entity } from '../../types/entity'
 import { DEFAULT_CENTER, DEFAULT_ZOOM, toCoordinates, WORLD_BOUNDS } from './geo'
-import { markerIcon } from './markerIcon'
+import { draftMarkerIcon, markerIcon } from './markerIcon'
 
 interface EntityMapProps {
   entities: Entity[]
   selectedId: string | null
   onSelect: (id: string) => void
   onMapClick: (latitude: number, longitude: number) => void
+  /** Location of an entity being created (not saved yet), shown as a draggable pin. */
+  draft?: { latitude: number; longitude: number } | null
+  onDraftMove?: (latitude: number, longitude: number) => void
 }
 
-export function EntityMap({ entities, selectedId, onSelect, onMapClick }: EntityMapProps) {
+export function EntityMap({
+  entities,
+  selectedId,
+  onSelect,
+  onMapClick,
+  draft,
+  onDraftMove,
+}: EntityMapProps) {
   return (
     <MapContainer
       center={DEFAULT_CENTER}
@@ -54,6 +64,21 @@ export function EntityMap({ entities, selectedId, onSelect, onMapClick }: Entity
           </Tooltip>
         </Marker>
       ))}
+      {draft && (
+        <Marker
+          position={[draft.latitude, draft.longitude]}
+          icon={draftMarkerIcon()}
+          zIndexOffset={2000}
+          draggable
+          eventHandlers={{
+            dragend: (event) => {
+              const { latitude, longitude } = toCoordinates((event.target as LeafletMarker).getLatLng())
+              onDraftMove?.(latitude, longitude)
+            },
+          }}
+          title="New entity location"
+        />
+      )}
     </MapContainer>
   )
 }

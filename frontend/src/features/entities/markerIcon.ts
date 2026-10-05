@@ -3,9 +3,19 @@ import { statusColor } from './labels'
 
 const cache = new Map<string, DivIcon>()
 
+const DRAFT_COLOR = '#111827'
+
 /** A pin colored by status. Icons are cached so markers do not re-render needlessly. */
 export function markerIcon(status: string, selected: boolean): DivIcon {
-  const color = statusColor(status)
+  return pinIcon(statusColor(status), selected)
+}
+
+/** The pin for an entity that is being created and not saved yet. */
+export function draftMarkerIcon(): DivIcon {
+  return pinIcon(DRAFT_COLOR, true)
+}
+
+function pinIcon(color: string, selected: boolean): DivIcon {
   const key = `${color}|${selected}`
   let icon = cache.get(key)
   if (!icon) {
