@@ -1,6 +1,6 @@
 module github.com/gustiarifiyanto/geo-entity-map/backend
 
-go 1.27.1
+go 1.26.0
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

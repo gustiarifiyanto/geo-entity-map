@@ -1,0 +1,16 @@
+# Backend
+backend/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Environment
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
