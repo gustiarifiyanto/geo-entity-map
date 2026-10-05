@@ -1,0 +1,14 @@
+# frontend
+node_modules/
+dist/
+
+# backend
+backend/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# env & editor
+.env
+.DS_Store
