@@ -80,6 +80,11 @@ func (val *Validator) Location(in *model.LocationInput) (FieldErrors, error) {
 	return val.check(in)
 }
 
+// Filter validates list filters. It returns nil when the filter is valid.
+func (val *Validator) Filter(f *model.EntityFilter) (FieldErrors, error) {
+	return val.check(f)
+}
+
 func (val *Validator) check(s any) (FieldErrors, error) {
 	err := val.v.Struct(s)
 	if err == nil {

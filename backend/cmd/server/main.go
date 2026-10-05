@@ -11,10 +11,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/database"
+	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/handler"
+	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/repository"
+	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/service"
+	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/validation"
 )
 
 type config struct {
@@ -62,12 +63,15 @@ func run() error {
 		return err
 	}
 
-	r := chi.NewRouter()
-	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
+	val, err := validation.New()
+	if err != nil {
+		return err
+	}
+	svc := service.NewEntityService(repository.NewEntityRepository(db))
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.port,
-		Handler:           r,
+		Handler:           handler.NewRouter(svc, val),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,

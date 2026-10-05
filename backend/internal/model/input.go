@@ -29,6 +29,12 @@ func (in *EntityInput) Normalize() {
 	}
 }
 
+// EntityFilter holds the optional list filters. Empty fields match everything.
+type EntityFilter struct {
+	Type   EntityType   `json:"type" validate:"omitempty,entity_type"`
+	Status EntityStatus `json:"status" validate:"omitempty,entity_status"`
+}
+
 // LocationInput is the request body for updating only an entity's coordinates.
 type LocationInput struct {
 	Latitude  *float64 `json:"latitude" validate:"required,latitude"`
