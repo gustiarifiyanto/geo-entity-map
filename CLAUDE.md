@@ -154,7 +154,7 @@ Frontend:
 
 ## Menjalankan Secara Lokal
 
-Kebutuhan: Go 1.22+, Node.js 20+.
+Kebutuhan: Go 1.26+, Node.js 20+.
 
 ```bash
 # backend (http://localhost:8080)
