@@ -1,9 +1,12 @@
 import { useCallback, useState } from 'react'
+import { useToast } from './components/toast/context'
+import { DeleteEntityDialog } from './features/entities/DeleteEntityDialog'
 import { EntityDetailPanel } from './features/entities/EntityDetailPanel'
 import { CreateEntityPanel, EditEntityPanel } from './features/entities/EntityFormPanels'
 import { EntityMap } from './features/entities/EntityMap'
 import { MapHeader } from './features/entities/MapHeader'
-import { useEntities, useMeta } from './features/entities/hooks'
+import { useEntities, useMeta, useUpdateEntityLocation } from './features/entities/hooks'
+import type { Entity } from './types/entity'
 
 /** What the side panel shows. Only UI state lives here; entities come from React Query. */
 type Panel =
@@ -18,6 +21,9 @@ function App() {
   const meta = useMeta()
   const entities = useEntities()
   const [panel, setPanel] = useState<Panel>(NO_PANEL)
+  const [deleteTarget, setDeleteTarget] = useState<Entity | null>(null)
+  const updateLocation = useUpdateEntityLocation()
+  const toast = useToast()
 
   const selectedId = panel.kind === 'view' || panel.kind === 'edit' ? panel.id : null
   // Derived from the query cache, so the panel closes if the entity disappears.
@@ -44,6 +50,21 @@ function App() {
     [isFormOpen, showEntity],
   )
 
+  const handleMove = useCallback(
+    (id: string, latitude: number, longitude: number) => {
+      const name = entities.data?.find((e) => e.id === id)?.name ?? 'Entity'
+      updateLocation.mutate(
+        { id, location: { latitude, longitude } },
+        {
+          onSuccess: () => toast.success(`"${name}" moved.`),
+          // The hook has already restored the previous position.
+          onError: (error) => toast.error(`Could not move "${name}": ${error.message}`),
+        },
+      )
+    },
+    [entities.data, updateLocation, toast],
+  )
+
   const error = entities.error ?? meta.error
 
   return (
@@ -53,6 +74,8 @@ function App() {
         selectedId={selectedId}
         onSelect={handleSelect}
         onMapClick={handleMapClick}
+        markersDraggable={!isFormOpen}
+        onMove={handleMove}
         draft={panel.kind === 'create' ? panel : null}
         onDraftMove={handleMapClick}
       />
@@ -88,6 +111,7 @@ function App() {
               entity={selected}
               onClose={closePanel}
               onEdit={() => setPanel({ kind: 'edit', id: selected.id })}
+              onDelete={() => setDeleteTarget(selected)}
             />
           )}
           {panel.kind === 'create' && meta.data && (
@@ -110,6 +134,15 @@ function App() {
           )}
         </div>
       )}
+
+      <DeleteEntityDialog
+        entity={deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onDeleted={() => {
+          setDeleteTarget(null)
+          closePanel()
+        }}
+      />
     </div>
   )
 }

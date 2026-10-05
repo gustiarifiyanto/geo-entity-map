@@ -5,8 +5,9 @@ import {
   getMeta,
   listEntities,
   updateEntity,
+  updateEntityLocation,
 } from '../../api/entities'
-import type { EntityFilter, EntityInput } from '../../types/entity'
+import type { Entity, EntityFilter, EntityInput, LocationInput } from '../../types/entity'
 
 export const metaKey = ['meta'] as const
 
@@ -49,6 +50,35 @@ export function useDeleteEntity() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: deleteEntity,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: entityKeys.all }),
+    // Refetch on failure too: a 404 means it was already deleted elsewhere.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: entityKeys.all }),
+  })
+}
+
+/**
+ * Moves an entity (marker drag) with an optimistic update: the cached lists
+ * change immediately and are restored if the request fails, which also moves
+ * the marker back to its original position.
+ */
+export function useUpdateEntityLocation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, location }: { id: string; location: LocationInput }) =>
+      updateEntityLocation(id, location),
+    onMutate: async ({ id, location }) => {
+      // Stop in-flight refetches from overwriting the optimistic value.
+      await queryClient.cancelQueries({ queryKey: entityKeys.all })
+      const previous = queryClient.getQueriesData<Entity[]>({ queryKey: entityKeys.all })
+      queryClient.setQueriesData<Entity[]>({ queryKey: entityKeys.all }, (entities) =>
+        entities?.map((e) => (e.id === id ? { ...e, ...location } : e)),
+      )
+      return { previous }
+    },
+    onError: (_error, _variables, context) => {
+      for (const [key, data] of context?.previous ?? []) {
+        queryClient.setQueryData(key, data)
+      }
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: entityKeys.all }),
   })
 }

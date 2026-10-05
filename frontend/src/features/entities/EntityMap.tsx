@@ -18,6 +18,9 @@ interface EntityMapProps {
   selectedId: string | null
   onSelect: (id: string) => void
   onMapClick: (latitude: number, longitude: number) => void
+  /** Whether saved markers can be dragged to a new location. */
+  markersDraggable: boolean
+  onMove: (id: string, latitude: number, longitude: number) => void
   /** Location of an entity being created (not saved yet), shown as a draggable pin. */
   draft?: { latitude: number; longitude: number } | null
   onDraftMove?: (latitude: number, longitude: number) => void
@@ -28,6 +31,8 @@ export function EntityMap({
   selectedId,
   onSelect,
   onMapClick,
+  markersDraggable,
+  onMove,
   draft,
   onDraftMove,
 }: EntityMapProps) {
@@ -55,7 +60,14 @@ export function EntityMap({
           position={[entity.latitude, entity.longitude]}
           icon={markerIcon(entity.status, entity.id === selectedId)}
           zIndexOffset={entity.id === selectedId ? 1000 : 0}
-          eventHandlers={{ click: () => onSelect(entity.id) }}
+          draggable={markersDraggable}
+          eventHandlers={{
+            click: () => onSelect(entity.id),
+            dragend: (event) => {
+              const { latitude, longitude } = toCoordinates((event.target as LeafletMarker).getLatLng())
+              onMove(entity.id, latitude, longitude)
+            },
+          }}
           keyboard
           title={entity.name}
         >
