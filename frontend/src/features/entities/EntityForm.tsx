@@ -49,7 +49,11 @@ export function EntityForm({
     resolver: zodResolver(schema),
     // Read once on mount: later prop changes never reset what the user typed.
     defaultValues,
-    mode: 'onTouched',
+    // Validate on submit only: the name field is autofocused, so validating on
+    // blur would show "is required" as soon as the user clicks the map to pick
+    // a location. After the first submit, errors update as the user types.
+    mode: 'onSubmit',
+    reValidateMode: 'onChange',
   })
 
   useEffect(() => {
