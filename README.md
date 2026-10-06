@@ -19,8 +19,13 @@ Aplikasi web untuk menampilkan dan mengelola **entitas yang memiliki lokasi geog
 - **Tampilan:** bar atas transparan dengan efek blur di atas map, dan animasi halus (tab yang bergeser, panel dan dialog yang muncul perlahan, bar dashboard yang tumbuh). Semua animasi hanya memakai CSS dan otomatis mati jika sistem operasi diatur untuk mengurangi gerakan (*reduce motion*).
 - Semua entitas tampil sebagai pin di map. Warna pin menunjukkan status (legenda di kartu kiri atas).
 - **Tambah:** klik area kosong di map → form terbuka dengan lat/lng terisi. Selama form terbuka, klik titik lain atau geser pin hitam untuk mengubah lokasi.
-- **Detail:** klik pin → panel detail (type, status, koordinat, deskripsi, attributes, timestamp).
+- **Detail:** klik pin → panel detail (type, status, koordinat, foto, deskripsi, attributes, timestamp).
 - **Edit:** tombol *Edit* di panel detail → form dengan data entitas.
+- **Foto entitas:**
+  - Semua role melihat galeri di panel detail. Klik foto untuk tampilan besar, dan pindah foto dengan tombol ‹ › atau panah keyboard.
+  - Admin menambah atau menghapus foto di form *New entity* / *Edit entity*. Perubahan foto baru diproses saat *Create* / *Save changes*, dan *Cancel* membatalkan semuanya.
+  - Maksimal 5 foto per entitas, 5 MB per foto, format JPEG, PNG, atau WebP.
+- **Attributes** diisi lewat baris *nama → nilai* (bukan JSON mentah). Nilai seperti `5000` atau `true` tersimpan sebagai angka/boolean, sisanya sebagai teks. Attributes lama yang berisi data bertingkat otomatis diedit dalam mode JSON supaya tidak rusak.
 - **Pindah lokasi:** pilih pin, lalu drag → `PATCH /location` dengan *optimistic update*. Kalau gagal, pin kembali ke posisi semula dan muncul toast error. Setelah berhasil, toast menampilkan tombol **Undo**.
 - **Hapus:** tombol *Delete* → dialog konfirmasi.
 - **Validasi di kedua sisi** dengan aturan dan pesan yang sama. Error 422 dari backend dipetakan ke field form yang sesuai.
@@ -68,7 +73,9 @@ Buka **http://localhost:5173**, lalu login dengan email dan password admin di at
 | `ADMIN_PASSWORD` | – | Password admin pertama, 8–72 byte. **Jangan di-commit.** |
 | `COOKIE_SECURE` | `false` | Set `true` jika app disajikan lewat HTTPS, supaya cookie session hanya dikirim lewat HTTPS |
 
-Untuk mengulang dari data contoh, hentikan backend lalu hapus folder `backend/data/`. Semua akun dan session ikut terhapus.
+| `UPLOAD_DIR` | `./data/uploads` | Folder file foto, satu subfolder per entitas (relatif terhadap folder `backend/`) |
+
+Untuk mengulang dari data contoh, hentikan backend lalu hapus folder `backend/data/`. Semua akun, session, dan foto ikut terhapus.
 
 ## Testing
 
@@ -90,6 +97,13 @@ cd frontend && npm run typecheck && npm run lint
   - `last_seen_at` tidak ditulis di detik ke-30 dan ke-59, lalu ditulis tepat di menit ke-1;
   - session lama dengan `last_seen_at` `NULL` tetap bisa dipakai;
   - statistik: user dengan 2 session dihitung sekali, session kedaluwarsa tidak dihitung, user yang diam 6 menit tidak online, user tepat di batas 5 menit masih online.
+- **Foto** (`internal/handler/photo_test.go`):
+  - JPEG/PNG/WebP diterima walaupun nama file-nya menyesatkan; file HTML bernama `.jpg` dan GIF ditolak;
+  - file kosong, tepat 5 MB vs 5 MB + 1 byte, foto ke-6, field yang salah, dua foto sekaligus, body bukan multipart;
+  - entitas/foto tidak ada (404), header `nosniff` dan cache saat file diambil;
+  - hapus foto dan hapus entitas ikut menghapus file di disk; upload yang ditolak tidak meninggalkan file;
+  - hak akses belum login / `user` / `admin`.
+- **Penyimpanan file** (`internal/storage`): tulis lewat file sementara lalu rename, nama berbahaya (`""`, `..`, `../x`, `a/b`) ditolak tanpa menghapus apa pun.
 - **Database** (`internal/database`): migrasi idempoten, seed hanya saat tabel kosong, constraint koordinat, CHECK role, email unik, hapus user ikut menghapus session, migrasi menambah `last_seen_at` ke tabel `sessions` lama tanpa kehilangan data.
 
 ## API
@@ -110,6 +124,10 @@ Base path `/api`. Request dan response berformat JSON.
 | POST | `/api/auth/logout` | Hapus session (tetap 204 walau belum login) | 204 |
 | GET | `/api/auth/me` | User yang sedang login | 200 |
 | GET | `/api/admin/stats` | Statistik user untuk dashboard admin | 200 |
+| GET | `/api/entities/{id}/photos` | Daftar foto entitas, terlama dulu | 200 |
+| POST | `/api/entities/{id}/photos` | Upload satu foto (`multipart/form-data`, field `photo`) | 201 |
+| GET | `/api/photos/{photoId}` | File gambar (bukan JSON) | 200 |
+| DELETE | `/api/photos/{photoId}` | Menghapus foto | 204 |
 
 Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak pernah dikirim.
 
@@ -121,6 +139,8 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 | `GET /api/meta`, `GET /api/entities[/{id}]` | 401 | ✅ | ✅ |
 | `POST`, `PUT`, `PATCH .../location`, `DELETE` pada `/api/entities` | 401 | 403 | ✅ |
 | `GET /api/admin/stats` | 401 | 403 | ✅ |
+| `GET .../photos`, `GET /api/photos/{photoId}` | 401 | ✅ | ✅ |
+| `POST .../photos`, `DELETE /api/photos/{photoId}` | 401 | 403 | ✅ |
 
 **Session:** login dan register memasang cookie `session` (`HttpOnly`, `SameSite=Lax`, berlaku 7 hari). Isinya token acak 32 byte; database hanya menyimpan hash SHA-256 token tersebut, sehingga file DB yang bocor tidak bisa dipakai untuk login.
 
@@ -140,6 +160,20 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 - `online`: user dengan session aktif yang dipakai dalam `online_window_minutes` terakhir. Setiap request yang sudah login memperbarui `sessions.last_seen_at`, tetapi paling sering sekali per menit, supaya kebanyakan request hanya membaca DB. Selama tab browser terlihat, frontend memanggil `GET /api/auth/me` tiap 2 menit (*heartbeat*), jadi user yang membuka map tapi diam tetap terhitung online.
 - Statistik entitas dihitung di frontend dari `GET /api/entities`, jadi tidak perlu endpoint tambahan.
 
+**Foto:**
+
+```json
+{ "data": { "id": "…", "entity_id": "…", "url": "/api/photos/…",
+            "content_type": "image/png", "size_bytes": 24512,
+            "created_at": "2026-10-06T07:24:46Z" } }
+```
+
+- Jenis file ditentukan dari **isi file** (`http.DetectContentType`), bukan dari nama file atau header kiriman client. File HTML yang diberi nama `.jpg` ditolak.
+- File disimpan di `UPLOAD_DIR/<entityId>/<photoId>.<ext>`. Namanya selalu dibuat server, dan setiap nama dicek supaya path tidak bisa keluar dari folder upload.
+- Batas 5 foto dicek dalam satu query bersama insert, jadi dua upload bersamaan tidak bisa melewatinya.
+- `GET /api/photos/{id}` mengirim `X-Content-Type-Options: nosniff` (browser tidak menebak tipe lain) dan `Cache-Control: private, max-age=86400` (foto tidak pernah diubah, hanya dihapus).
+- Bentuk objek entitas tidak berubah; foto diambil lewat endpoint sendiri.
+
 Format response:
 
 ```jsonc
@@ -156,6 +190,7 @@ Format response:
 | Status | Kode | Kapan |
 |---|---|---|
 | 400 | `invalid_json` | Body rusak/kosong, ada field yang tidak dikenal, lebih dari satu objek JSON, atau > 1 MiB |
+| 400 | `invalid_request` | Upload foto: body bukan `multipart/form-data`, field selain `photo`, atau lebih dari satu foto |
 | 401 | `unauthorized` | Belum login, atau session tidak valid / kedaluwarsa |
 | 401 | `invalid_credentials` | Email atau password salah (pesan sama untuk keduanya, supaya tidak membocorkan email yang terdaftar) |
 | 403 | `forbidden` | Sudah login, tapi bukan admin |
@@ -171,6 +206,7 @@ Keputusan tambahan yang tidak diatur di brief awal (disetujui developer):
 - `POST` mengembalikan header `Location: /api/entities/{id}`.
 - `PUT` adalah update penuh: `description`/`attributes` yang tidak dikirim akan dikosongkan. `created_at` tidak berubah.
 - Email yang sudah terdaftar saat register → **422** `fields.email: "is already registered"` (bukan 409), supaya langsung tampil di bawah input.
+- Upload foto yang tidak valid → **422** di `fields.photo`. Body upload yang bukan `multipart/form-data` yang valid → **400 `invalid_request`** (kode baru, karena `invalid_json` tidak tepat untuk upload file).
 - Auth dicek **sebelum** body divalidasi: request tanpa hak akses selalu mendapat 401/403, tidak pernah 422.
 
 ## Model Data & Aturan Validasi
@@ -184,7 +220,7 @@ Keputusan tambahan yang tidak diatur di brief awal (disetujui developer):
 | `latitude` | wajib, −90 … 90, bukan NaN/Inf |
 | `longitude` | wajib, −180 … 180, bukan NaN/Inf |
 | `description` | opsional, di-trim, maks. 500 karakter |
-| `attributes` | opsional, harus **objek** JSON (`null` = kosong) |
+| `attributes` | opsional, harus **objek** JSON (`null` = kosong). Di form diisi sebagai baris nama → nilai; nama wajib dan tidak boleh dobel |
 | `created_at`, `updated_at` | RFC3339 UTC (presisi detik), diisi backend |
 
 **User:**
@@ -209,11 +245,13 @@ backend/
   internal/service/        logika bisnis (UUID, timestamp, bcrypt, token session)
   internal/repository/     query SQL berparameter (entities, users, sessions)
   internal/database/       koneksi, migrasi (termasuk penambahan kolom untuk DB lama), seed
+  internal/storage/        file foto di disk (satu folder per entitas, nama selalu dicek)
 frontend/src/
   api/                     fetch client (ApiError) + fungsi API yang typed
   components/              AppBar (tab Map | Dashboard), ConfirmDialog, toast, style form bersama
   features/auth/           halaman login/register, hooks user saat ini + heartbeat
   features/dashboard/      ringkasan entitas, statistik user admin
+  features/photos/         galeri view-only, tampilan foto besar, pemilih foto di form (draft)
   features/entities/       map, marker, form, panel detail, hooks React Query, helper geo
   schemas/                 schema zod (mengikuti aturan backend)
   types/                   tipe bersama
@@ -247,7 +285,7 @@ Layering backend: `handler → service → repository`. Handler tidak menjalanka
 | `react-hook-form` + `zod` + `@hookform/resolvers` | Form performan dengan error per field. Schema zod dibangun dari `/api/meta` dan mengikuti aturan backend. |
 | Tailwind CSS | Styling cepat dan konsisten tanpa file CSS terpisah per komponen |
 
-Dialog konfirmasi, toast, halaman login, dan bar di dashboard dibuat sendiri (elemen `<dialog>` bawaan browser + context React + react-hook-form + `div` dengan Tailwind) supaya **tidak menambah dependency**. Library chart tidak diperlukan untuk beberapa bar horizontal. Tidak ada router: halaman login tampil saat belum login, dan tab Map | Dashboard cukup berupa state biasa.
+Dialog konfirmasi, toast, halaman login, dan bar di dashboard dibuat sendiri (elemen `<dialog>` bawaan browser + context React + react-hook-form + `div` dengan Tailwind) supaya **tidak menambah dependency**. Library chart tidak diperlukan untuk beberapa bar horizontal. Upload foto memakai `multipart` dan `http.DetectContentType` dari stdlib Go, dan `FormData` + `<input type="file">` bawaan browser. Tidak ada router: halaman login tampil saat belum login, dan tab Map | Dashboard cukup berupa state biasa.
 
 ## Workflow AI
 
@@ -270,6 +308,10 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
    - tidak bisa memastikan password sudah terketik benar, jadi saya minta tombol *Show/Hide* password;
    - pesan error saat backend mati atau env admin hanya terisi sebagian kurang jelas, sehingga diperjelas.
 8. **Dashboard di branch `feat/dashboard`.** Saya memutuskan dashboard admin dan user digabung dalam satu branch karena keduanya mengubah area UI yang sama. Untuk "user yang sedang login", AI menawarkan dua arti: punya session aktif (sederhana) atau benar-benar aktif dalam 5 menit terakhir (butuh kolom dan heartbeat). Saya memilih yang kedua setelah memastikan perubahannya tidak besar, dan keduanya ditampilkan dengan label yang jujur. Sebelum dipakai di data saya, migrasi kolom baru diuji pada salinan database lokal.
+9. **Foto entitas dan editor attributes.** Saat QA saya mengubah beberapa keputusan UX:
+   - upload foto dipindah dari panel detail ke form *New/Edit entity*, dan saya memilih perubahan foto ikut diproses saat *Save* (bukan langsung), supaya *Cancel* tetap membatalkan semuanya;
+   - kolom attributes yang awalnya berupa JSON mentah saya minta diganti dengan baris nama → nilai, karena JSON mudah salah ketik bagi user biasa;
+   - saya juga menemukan kolom nilai yang "kegepeng" di editor attributes, lalu diperbaiki.
 
 ## Fitur yang Belum Selesai & Keterbatasan
 
@@ -282,6 +324,8 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
 - **Lupa password / ganti password.**
 - **Kelola user** (daftar user, menaikkan user menjadi admin, menghapus akun). Admin tambahan saat ini hanya bisa dibuat lewat `ADMIN_EMAIL`/`ADMIN_PASSWORD` dengan email baru.
 - Daftar nama user yang sedang online, serta grafik/riwayat aktivitas di dashboard.
+- Untuk foto: resize/thumbnail otomatis, crop, mengatur urutan foto, dan keterangan (caption) per foto.
+- Direncanakan (urutan sudah disepakati): durasi pemasangan fasilitas → data sensor IoT (endpoint perangkat + API key, data dummy) → live tracking kendaraan (simulator + SSE). Pilihan bahasa Indonesia/English juga ditunda.
 - **Rate limiting login.** Belum ada pembatasan percobaan login berulang.
 
 **Keterbatasan yang diketahui:**
@@ -296,9 +340,14 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
 - **Session tidak diperpanjang otomatis.** Setelah 7 hari user harus login ulang walaupun aktif. Session kedaluwarsa dibersihkan dari DB setiap ada login.
 - Format email dicek oleh dua library berbeda (`validator` di Go, `z.email()` di frontend). Untuk email normal hasilnya sama, tetapi format yang sangat tidak lazim bisa diterima di satu sisi dan ditolak di sisi lain. Backend tetap jadi penentu.
 - List entitas tidak dipaginasi. Cukup untuk ratusan entitas, belum untuk skala sangat besar.
+- **Foto tidak di-resize.** Thumbnail di galeri memuat file aslinya (sampai 5 MB), jadi bisa terasa lambat di koneksi pelan.
+- **Isi foto hanya dicek dari tanda tangan awal file** (seperti `http.DetectContentType`), bukan di-decode penuh. File dengan header gambar yang benar tapi isinya rusak tetap diterima; browser hanya gagal menampilkannya.
+- **File foto dan baris DB tidak dalam satu transaksi.** Kalau server mati tepat di antara menyimpan file dan menulis ke DB, bisa tersisa file yatim di `UPLOAD_DIR` (tidak terlihat di app, hanya memakan ruang disk).
+- **Perubahan foto di form diproses setelah entitas tersimpan.** Kalau upload sebagian gagal, entitas tetap tersimpan dan muncul toast berisi jumlah yang gagal; foto yang gagal perlu ditambahkan ulang.
+- **Angka di attributes:** teks yang persis seperti angka (misalnya `1234`) selalu disimpan sebagai angka. Untuk memaksa disimpan sebagai teks, perlu mode JSON.
 - Backend tidak menyajikan file hasil build frontend dan tidak mengatur CORS. Untuk produksi, keduanya perlu disajikan dari origin yang sama (reverse proxy) atau CORS perlu ditambahkan.
 - **Tile OpenStreetMap** tunduk pada [Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/) dan tidak ditujukan untuk trafik produksi tinggi. Untuk produksi, gunakan penyedia tile berbayar atau host tile sendiri.
 - Vite memberi peringatan ukuran bundle > 500 kB (Leaflet + React dalam satu chunk). Belum dilakukan code splitting.
 - Dua perbedaan kecil yang disengaja antara frontend dan backend:
-  - JSON `attributes` yang rusak ditangkap frontend sebagai error field `"must be valid JSON"`, sedangkan jika dikirim langsung ke API hasilnya 400 `invalid_json` (sesuai kontrak).
+  - JSON `attributes` yang rusak (hanya mungkin di mode JSON untuk data bertingkat) ditangkap frontend sebagai error field `"must be valid JSON"`, sedangkan jika dikirim langsung ke API hasilnya 400 `invalid_json` (sesuai kontrak).
   - `String.prototype.trim()` di JS memangkas beberapa karakter spasi Unicode (misalnya U+FEFF) yang tidak dipangkas `strings.TrimSpace` di Go. Frontend sedikit lebih ketat, jadi tidak menyebabkan error 422 yang tak terduga.
