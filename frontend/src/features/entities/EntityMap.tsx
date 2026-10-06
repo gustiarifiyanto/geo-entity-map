@@ -118,7 +118,8 @@ function FitToEntitiesOnce({ entities }: { entities: Entity[] }) {
     if (fitted.current || entities.length === 0) return
     fitted.current = true
     const bounds = latLngBounds(entities.map((e): [number, number] => [e.latitude, e.longitude]))
-    map.fitBounds(bounds, { padding: [48, 48], maxZoom: 14 })
+    // Extra top padding keeps pins clear of the translucent app bar and the legend card.
+    map.fitBounds(bounds, { paddingTopLeft: [48, 140], paddingBottomRight: [48, 48], maxZoom: 14 })
   }, [entities, map])
 
   return null

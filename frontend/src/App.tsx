@@ -1,5 +1,6 @@
 import { useCallback, useState, type ReactNode } from 'react'
 import { AppBar, type View } from './components/AppBar'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import { useToast } from './components/toast/context'
 import { AuthScreen } from './features/auth/AuthScreen'
 import { useLogout, useMe } from './features/auth/hooks'
@@ -58,6 +59,7 @@ function MapScreen({ user }: { user: User }) {
   const meta = useMeta()
   const entities = useEntities()
   const [view, setView] = useState<View>('map')
+  const [confirmLogout, setConfirmLogout] = useState(false)
   const [panel, setPanel] = useState<Panel>(NO_PANEL)
   const [deleteTarget, setDeleteTarget] = useState<Entity | null>(null)
   const updateLocation = useUpdateEntityLocation()
@@ -120,21 +122,18 @@ function MapScreen({ user }: { user: User }) {
   const error = entities.error ?? meta.error
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative h-full">
       <AppBar
         user={user}
         view={view}
         onViewChange={setView}
-        onLogout={() =>
-          logout.mutate(undefined, {
-            onError: (err) => toast.error(`Could not log out: ${err.message}`),
-          })
-        }
+        onLogout={() => setConfirmLogout(true)}
         loggingOut={logout.isPending}
       />
-      {/* The map stays mounted under the dashboard, so switching tabs keeps the
-          selection, an open form and the map position. */}
-      <main className="relative min-h-0 flex-1">
+      {/* The map fills the screen under the translucent bar and stays mounted
+          under the dashboard, so switching tabs keeps the selection, an open
+          form and the map position. Overlays start below the bar (top-17). */}
+      <main className="absolute inset-0">
         <EntityMap
           entities={entities.data ?? []}
           selectedId={selectedId}
@@ -146,14 +145,14 @@ function MapScreen({ user }: { user: User }) {
           onDraftMove={handleMapClick}
         />
 
-        <div className="pointer-events-none absolute inset-x-3 top-3 z-[1000] flex flex-col items-start gap-2">
-          <div className="pointer-events-auto">
+        <div className="pointer-events-none absolute inset-x-3 top-17 z-[1000] flex flex-col items-start gap-2">
+          <div className="pointer-events-auto animate-fade-in-up">
             <MapHeader entityCount={entities.data?.length} statuses={meta.data?.statuses ?? []} canManage={canManage} />
           </div>
           {error && (
             <div
               role="alert"
-              className="pointer-events-auto flex items-center gap-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 shadow ring-1 ring-red-200"
+              className="pointer-events-auto flex animate-fade-in-up items-center gap-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 shadow ring-1 ring-red-200"
             >
               <span>{error.message}</span>
               <button
@@ -171,7 +170,11 @@ function MapScreen({ user }: { user: User }) {
         </div>
 
         {panel.kind !== 'none' && (
-          <div className="absolute inset-x-3 bottom-3 z-[1000] flex max-h-[70%] flex-col sm:inset-x-auto sm:top-3 sm:right-3 sm:bottom-3 sm:max-h-none sm:w-96">
+          <div
+            // A new key per panel (not per keystroke or map click) replays the entrance animation.
+            key={panel.kind === 'create' ? 'create' : `${panel.kind}-${panel.id}`}
+            className="absolute inset-x-3 bottom-3 z-[1000] flex max-h-[70%] animate-fade-in-up flex-col sm:inset-x-auto sm:top-17 sm:right-3 sm:bottom-3 sm:max-h-none sm:w-96"
+          >
             {panel.kind === 'view' && selected && (
               <EntityDetailPanel
                 entity={selected}
@@ -203,11 +206,35 @@ function MapScreen({ user }: { user: User }) {
         )}
 
         {view === 'dashboard' && (
-          <div className="absolute inset-0 z-[1100] overflow-y-auto bg-gray-50 pt-6">
+          <div className="absolute inset-0 z-[1100] animate-fade-in overflow-y-auto bg-gray-50 pt-20">
             <Dashboard entities={entities.data} meta={meta.data} showUserStats={canManage} />
           </div>
         )}
       </main>
+
+      <ConfirmDialog
+        open={confirmLogout}
+        title="Log out?"
+        confirmLabel="Log out"
+        pendingLabel="Logging out…"
+        pending={logout.isPending}
+        tone="neutral"
+        onConfirm={() =>
+          logout.mutate(undefined, {
+            // On success the login screen replaces this one.
+            onError: (err) => {
+              setConfirmLogout(false)
+              toast.error(`Could not log out: ${err.message}`)
+            },
+          })
+        }
+        onCancel={() => setConfirmLogout(false)}
+      >
+        <p>
+          You are logged in as <span className="font-medium text-gray-900">{user.email}</span>. You will need to log in
+          again to use the map.
+        </p>
+      </ConfirmDialog>
 
       <DeleteEntityDialog
         entity={deleteTarget}

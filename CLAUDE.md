@@ -325,11 +325,11 @@ Auth (branch `feat/auth`, setelah MVP):
 Di luar scope auth (catat sebagai keterbatasan): lupa/ganti password, kelola user (promote ke admin), rate limiting login.
 
 Dashboard (branch `feat/dashboard`, setelah auth):
-- [ ] Backend: kolom `last_seen_at` + migrasi untuk DB lama, update di middleware (maks. sekali per menit) + test
-- [ ] Backend: `GET /api/admin/stats` (admin saja) + test
-- [ ] Frontend: tab Map | Dashboard, ringkasan entitas untuk kedua role
-- [ ] Frontend: statistik user untuk admin, heartbeat `/auth/me`
-- [ ] README: endpoint stats, arti "online", keterbatasan
+- [x] Backend: kolom `last_seen_at` + migrasi untuk DB lama, update di middleware (maks. sekali per menit) + test
+- [x] Backend: `GET /api/admin/stats` (admin saja) + test
+- [x] Frontend: tab Map | Dashboard, ringkasan entitas untuk kedua role
+- [x] Frontend: statistik user untuk admin, heartbeat `/auth/me`
+- [x] README: endpoint stats, arti "online", keterbatasan
 
 Di luar scope dashboard (catat sebagai keterbatasan): status online realtime (WebSocket), daftar nama user yang online, grafik/riwayat aktivitas.
 

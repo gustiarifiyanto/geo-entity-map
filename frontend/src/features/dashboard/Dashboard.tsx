@@ -99,7 +99,7 @@ function UserSummary() {
 
 function Section({ title, aside, children }: { title: string; aside?: string; children: ReactNode }) {
   return (
-    <section aria-label={title}>
+    <section aria-label={title} className="animate-fade-in-up">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 className="text-base font-semibold text-gray-900">{title}</h2>
         {aside && <p className="text-xs text-gray-500">{aside}</p>}
@@ -145,7 +145,7 @@ function CountBars({ counts, color }: { counts: Count[]; color: (value: string) 
           <div className="h-2 rounded-full bg-gray-100">
             {count > 0 && (
               <div
-                className="h-2 rounded-full"
+                className="h-2 animate-grow-x rounded-full transition-[width] duration-500 ease-out"
                 style={{ width: `${(count / max) * 100}%`, backgroundColor: color(value) }}
               />
             )}

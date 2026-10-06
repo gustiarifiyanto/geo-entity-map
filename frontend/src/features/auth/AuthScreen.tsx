@@ -29,7 +29,7 @@ export function AuthScreen() {
 
   return (
     <main className="flex min-h-full items-center justify-center bg-gray-100 p-4">
-      <div className="w-full max-w-sm rounded-xl bg-white shadow-xl ring-1 ring-black/5">
+      <div className="w-full max-w-sm animate-fade-in-up rounded-xl bg-white shadow-xl ring-1 ring-black/5">
         <header className="border-b border-gray-100 p-6 pb-4">
           <h1 className="text-lg font-semibold text-gray-900">Geo Entity Map</h1>
           <p className="mt-1 text-sm text-gray-500">{MODES[mode].title}</p>
