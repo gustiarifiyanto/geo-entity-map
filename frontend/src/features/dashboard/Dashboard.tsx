@@ -78,16 +78,16 @@ function UserSummary() {
       aside={`Updated ${new Date(stats.dataUpdatedAt).toLocaleTimeString()} · refreshes every 30 s`}
     >
       <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-        <StatTile label="Registered users" value={users.total} />
+        <StatTile label="Registered users" value={users.total} hint="Role user only. Admins are listed under By role." />
         <StatTile
           label={`Online (last ${window} min)`}
           value={users.online}
-          hint={`Made a request in the last ${window} minutes.`}
+          hint={`Users who made a request in the last ${window} minutes.`}
         />
         <StatTile
           label="With an active session"
           value={users.with_active_session}
-          hint="Logged in and not logged out or expired yet. Includes closed browsers."
+          hint="Users logged in and not logged out or expired yet. Includes closed browsers."
         />
         <Card title="By role">
           <CountBars counts={roles} color={() => NEUTRAL_BAR} />

@@ -111,7 +111,10 @@ func TestStats(t *testing.T) {
 	if _, _, err := s.EnsureAdmin(ctx, model.RegisterInput{Email: "admin@example.com", Password: "admin-password"}); err != nil {
 		t.Fatalf("EnsureAdmin: %v", err)
 	}
-	// The admin has no session at all.
+	// The admin is logged in and online, but admins are never counted.
+	if _, err := s.Login(ctx, model.LoginInput{Email: "admin@example.com", Password: "admin-password"}); err != nil {
+		t.Fatalf("admin login: %v", err)
+	}
 
 	// Two sessions for the same user: counted once.
 	registerUser(t, s, "online@example.com")
@@ -141,7 +144,7 @@ func TestStats(t *testing.T) {
 		t.Fatalf("Stats: %v", err)
 	}
 	want := model.UserStats{
-		Total:             5,
+		Total:             4, // role user only: online, idle, expired, edge
 		ByRole:            map[model.Role]int{model.RoleAdmin: 1, model.RoleUser: 4},
 		WithActiveSession: 3, // online, idle, edge
 		Online:            2, // online, edge

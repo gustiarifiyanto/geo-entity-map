@@ -298,13 +298,14 @@ func TestAdminStats(t *testing.T) {
 	expectStatus(t, rec, http.StatusOK)
 	got := decode[struct{ Data model.AdminStats }](t, rec).Data
 
-	// Both accounts just logged in, so both are online.
+	// Both accounts just logged in, but only role user is counted; the admin
+	// appears in by_role only.
 	want := model.AdminStats{
 		Users: model.UserStats{
-			Total:             2,
+			Total:             1,
 			ByRole:            map[model.Role]int{model.RoleUser: 1, model.RoleAdmin: 1},
-			WithActiveSession: 2,
-			Online:            2,
+			WithActiveSession: 1,
+			Online:            1,
 		},
 		OnlineWindowMinutes: 5,
 	}

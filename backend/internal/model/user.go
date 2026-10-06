@@ -64,6 +64,8 @@ func (in *LoginInput) Normalize() {
 
 // UserStats counts accounts and their activity for the admin dashboard.
 type UserStats struct {
+	// Total, WithActiveSession and Online count only role user: admins are the
+	// ones reading the dashboard, so counting them would blur the numbers.
 	Total int `json:"total"`
 	// ByRole has an entry for every role in Roles, including zero counts.
 	ByRole map[Role]int `json:"by_role"`

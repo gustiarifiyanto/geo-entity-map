@@ -33,7 +33,7 @@ type UserRepository interface {
 	CreateSession(ctx context.Context, tokenHash, userID string, createdAt, expiresAt time.Time) error
 	UserBySession(ctx context.Context, tokenHash string, now time.Time) (model.User, time.Time, error)
 	TouchSession(ctx context.Context, tokenHash string, seenAt time.Time) error
-	UserStats(ctx context.Context, now, onlineSince time.Time) (model.UserStats, error)
+	UserStats(ctx context.Context, role model.Role, now, onlineSince time.Time) (model.UserStats, error)
 	DeleteSession(ctx context.Context, tokenHash string) error
 	DeleteExpiredSessions(ctx context.Context, now time.Time) error
 }
@@ -128,11 +128,11 @@ func (s *AuthService) Authenticate(ctx context.Context, token string) (model.Use
 	return u, nil
 }
 
-// Stats counts users for the admin dashboard. Every role is listed, even with
-// zero users.
+// Stats counts users for the admin dashboard. Total, active-session and online
+// counts cover role user only; ByRole lists every role, even with zero users.
 func (s *AuthService) Stats(ctx context.Context) (model.AdminStats, error) {
 	now := s.now()
-	users, err := s.repo.UserStats(ctx, now, now.Add(-OnlineWindow))
+	users, err := s.repo.UserStats(ctx, model.RoleUser, now, now.Add(-OnlineWindow))
 	if err != nil {
 		return model.AdminStats{}, err
 	}

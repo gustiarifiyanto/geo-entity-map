@@ -106,17 +106,19 @@ func (r *UserRepository) TouchSession(ctx context.Context, tokenHash string, see
 	return nil
 }
 
-// UserStats counts users by role, and the distinct users with an unexpired
-// session (all of them, and those seen at or after onlineSince).
-// ByRole only contains roles that have users.
-func (r *UserRepository) UserStats(ctx context.Context, now, onlineSince time.Time) (model.UserStats, error) {
+// UserStats counts users by role (every role), and for the given role only:
+// its users, and those of them with an unexpired session (all, and those seen
+// at or after onlineSince). ByRole only contains roles that have users.
+func (r *UserRepository) UserStats(ctx context.Context, role model.Role, now, onlineSince time.Time) (model.UserStats, error) {
 	stats := model.UserStats{ByRole: map[model.Role]int{}}
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
-			(SELECT COUNT(*) FROM users),
-			(SELECT COUNT(DISTINCT user_id) FROM sessions WHERE expires_at > ?1),
-			(SELECT COUNT(DISTINCT user_id) FROM sessions WHERE expires_at > ?1 AND last_seen_at >= ?2)`,
-		formatTime(now), formatTime(onlineSince),
+			(SELECT COUNT(*) FROM users WHERE role = ?1),
+			(SELECT COUNT(DISTINCT s.user_id) FROM sessions s JOIN users u ON u.id = s.user_id
+				WHERE u.role = ?1 AND s.expires_at > ?2),
+			(SELECT COUNT(DISTINCT s.user_id) FROM sessions s JOIN users u ON u.id = s.user_id
+				WHERE u.role = ?1 AND s.expires_at > ?2 AND s.last_seen_at >= ?3)`,
+		role, formatTime(now), formatTime(onlineSince),
 	).Scan(&stats.Total, &stats.WithActiveSession, &stats.Online)
 	if err != nil {
 		return model.UserStats{}, fmt.Errorf("count users and sessions: %w", err)
