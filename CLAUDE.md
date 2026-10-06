@@ -557,10 +557,10 @@ Zona operasional kendaraan (branch `feat/dashboard`; keputusan developer: dikerj
 Di luar scope zona (catat sebagai keterbatasan): zona poligon, beberapa zona per kendaraan, jadwal zona per jam, riwayat keluar-masuk zona, notifikasi.
 
 Pilihan bahasa ID | EN (branch `feat/dashboard`, keputusan developer; frontend saja):
-- [ ] Kamus `en`/`id` + provider + tombol ID | EN (bar atas dan halaman login), disimpan di browser
-- [ ] Semua teks UI, label nilai backend, tanggal/angka mengikuti bahasa
-- [ ] Terjemahan pesan error backend/zod dengan tabel pola + fallback apa adanya
-- [ ] README: cara kerja, cara menambah teks/bahasa, keterbatasan
+- [x] Kamus `en`/`id` + provider + tombol ID | EN (bar atas dan halaman login), disimpan di browser
+- [x] Semua teks UI, label nilai backend, tanggal/angka mengikuti bahasa
+- [x] Terjemahan pesan error backend/zod dengan tabel pola + fallback apa adanya
+- [x] README: cara kerja, cara menambah teks/bahasa, keterbatasan
 
 Di luar scope bahasa (catat sebagai keterbatasan): bahasa lain, terjemahan dari backend (Accept-Language), terjemahan data milik user.
 
