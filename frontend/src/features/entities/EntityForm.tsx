@@ -8,6 +8,7 @@ import {
   type EntityFormOutput,
   type EntityFormValues,
 } from '../../schemas/entity'
+import { inputClass } from '../../components/formStyles'
 import type { EntityInput, Meta } from '../../types/entity'
 import { formatLabel } from './labels'
 import { applyServerError } from './serverErrors'
@@ -24,11 +25,6 @@ interface EntityFormProps {
   onSubmit: (input: EntityInput) => Promise<void>
   onCancel: () => void
 }
-
-const inputClass =
-  'block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-xs ' +
-  'focus:border-gray-900 focus:ring-1 focus:ring-gray-900 focus:outline-none ' +
-  'aria-invalid:border-red-500 aria-invalid:focus:ring-red-500 disabled:bg-gray-50'
 
 export function EntityForm({
   meta,
