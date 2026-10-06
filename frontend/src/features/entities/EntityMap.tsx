@@ -43,6 +43,8 @@ interface EntityMapProps {
   zonePreview?: ZonePreview | null
   /** True while the next click picks a zone center (crosshair cursor). */
   picking?: boolean
+  /** The map flies here whenever a new object is passed (clicking the same entity again flies again). */
+  focus?: { latitude: number; longitude: number } | null
 }
 
 export function EntityMap({
@@ -57,6 +59,7 @@ export function EntityMap({
   zones = [],
   zonePreview = null,
   picking = false,
+  focus = null,
 }: EntityMapProps) {
   const { t } = useI18n()
   return (
@@ -96,6 +99,7 @@ export function EntityMap({
       )}
       <MapClickHandler onMapClick={onMapClick} />
       <FitToEntitiesOnce entities={entities} />
+      <FlyToFocus focus={focus} />
       {entities.map((entity) => (
         <Marker
           key={entity.id}
@@ -160,5 +164,15 @@ function FitToEntitiesOnce({ entities }: { entities: Entity[] }) {
     map.fitBounds(bounds, { paddingTopLeft: [48, 140], paddingBottomRight: [48, 48], maxZoom: 14 })
   }, [entities, map])
 
+  return null
+}
+
+/** Flies to a requested position (e.g. an entity picked on the dashboard), zooming in if needed. */
+function FlyToFocus({ focus }: { focus: EntityMapProps['focus'] }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!focus) return
+    map.flyTo([focus.latitude, focus.longitude], Math.max(map.getZoom(), 15), { duration: 0.8 })
+  }, [focus, map])
   return null
 }

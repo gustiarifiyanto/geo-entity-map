@@ -317,7 +317,10 @@ Otorisasi **wajib** dilakukan di middleware backend. Frontend hanya menyembunyik
       "total": 12,
       "by_role": { "user": 10, "admin": 2 },
       "with_active_session": 5,
-      "online": 2
+      "online": 2,
+      "active_users": [
+        { "id": "…", "email": "budi@example.com", "last_seen_at": "2026-10-06T07:00:00Z", "online": true }
+      ]
     },
     "online_window_minutes": 5
   }
@@ -329,6 +332,7 @@ Otorisasi **wajib** dilakukan di middleware backend. Frontend hanya menyembunyik
 - `by_role`: berisi **setiap** role di `model.Roles` (termasuk `admin`), termasuk yang jumlahnya 0.
 - `with_active_session`: jumlah **user** (bukan session) yang punya minimal satu session belum kedaluwarsa.
 - `online`: jumlah user dengan session belum kedaluwarsa yang `last_seen_at`-nya dalam `online_window_minutes` terakhir.
+- `active_users`: siapa saja di balik `with_active_session` (hanya role `user`), diurutkan dari yang terakhir aktif, maksimal 50. `last_seen_at` adalah aktivitas terbaru dari semua session-nya (`null` untuk session lama tanpa catatan), `online` memakai aturan 5 menit yang sama. Hanya email yang dikirim; hash password dan token tidak pernah ikut (keputusan developer, menggantikan "daftar nama user yang online" yang sebelumnya di luar scope).
 - Batas online (5 menit) adalah konstanta di backend dan dikirim di response, jadi frontend tidak meng-hardcode angkanya.
 - Statistik entitas **tidak** ada di endpoint ini; frontend menghitungnya dari `GET /api/entities` yang sudah boleh diakses kedua role.
 
@@ -393,6 +397,7 @@ Frontend:
 - Statistik user di-refetch tiap 30 detik selama tab Dashboard terbuka dan tab browser terlihat.
 - **Heartbeat:** selama tab browser terlihat, frontend memanggil `GET /api/auth/me` tiap 2 menit supaya user yang membuka app tapi diam tetap terhitung online.
 - Label di UI harus jujur (UI berbahasa Inggris): "Online (last 5 min)" dan "With an active session", bukan "logged in now".
+- Daftar entitas di dashboard (semua entitas di kartu Total, entitas yang dilacak pemasangannya, entitas di luar zona) **bisa diklik**: pindah ke tab Map, map terbang ke pin, dan panel detail terbuka. Jika sedang ada form tambah/edit, form itu tidak diganti (tidak ada data yang hilang); map tetap terbang ke pin dan muncul pemberitahuan (keputusan developer).
 
 ## Perilaku Pemasangan Fasilitas
 
@@ -523,7 +528,7 @@ Dashboard (branch `feat/dashboard`, setelah auth):
 - [x] Frontend: statistik user untuk admin, heartbeat `/auth/me`
 - [x] README: endpoint stats, arti "online", keterbatasan
 
-Di luar scope dashboard (catat sebagai keterbatasan): status online realtime (WebSocket), daftar nama user yang online, grafik/riwayat aktivitas.
+Di luar scope dashboard (catat sebagai keterbatasan): status online realtime (WebSocket), grafik/riwayat aktivitas. (Daftar akun dengan sesi aktif sudah ditambahkan atas permintaan developer.)
 
 Foto entitas (lanjutan di branch `feat/dashboard`, keputusan developer):
 - [x] Backend: tabel `entity_photos`, penyimpanan file di `UPLOAD_DIR`, 4 endpoint foto + test

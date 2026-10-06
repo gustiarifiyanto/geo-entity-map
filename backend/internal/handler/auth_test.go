@@ -314,6 +314,17 @@ func TestAdminStats(t *testing.T) {
 		!maps.Equal(got.Users.ByRole, want.Users.ByRole) {
 		t.Errorf("stats = %+v, want %+v", got, want)
 	}
+	// The logged-in user is listed; the admin is not.
+	if a := got.Users.ActiveUsers; len(a) != 1 || a[0].Email != "budi@example.com" || !a[0].Online {
+		t.Errorf("active_users = %+v, want only budi, online", a)
+	}
+	// Nothing secret leaks into the dashboard response.
+	body := rec.Body.String()
+	for _, secret := range []string{"password", "token", "hash"} {
+		if strings.Contains(body, secret) {
+			t.Errorf("stats response mentions %q: %s", secret, body)
+		}
+	}
 }
 
 func TestAdminStatsListsEveryRole(t *testing.T) {

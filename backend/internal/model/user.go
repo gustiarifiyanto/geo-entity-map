@@ -73,6 +73,22 @@ type UserStats struct {
 	WithActiveSession int `json:"with_active_session"`
 	// Online counts users with an unexpired session seen within the online window.
 	Online int `json:"online"`
+	// ActiveUsers lists who is behind WithActiveSession (role user only), most
+	// recently seen first, at most MaxActiveUsersListed.
+	ActiveUsers []ActiveUser `json:"active_users"`
+}
+
+// MaxActiveUsersListed caps ActiveUsers so the dashboard response stays small.
+const MaxActiveUsersListed = 50
+
+// ActiveUser is an account with an unexpired session, for the admin dashboard.
+type ActiveUser struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	// LastSeenAt is the latest activity over all of the user's sessions; nil
+	// for sessions from before activity was recorded.
+	LastSeenAt *time.Time `json:"last_seen_at"`
+	Online     bool       `json:"online"`
 }
 
 // AdminStats is the response of GET /api/admin/stats.

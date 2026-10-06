@@ -1,4 +1,5 @@
-import { useI18n, type I18n } from '../../i18n/context'
+import { useI18n } from '../../i18n/context'
+import { timeAgo } from '../../i18n/format'
 import { CAP_READINGS, hasCapability } from '../../schemas/capabilities'
 import { useMeta } from '../entities/hooks'
 import { useReadings } from './hooks'
@@ -51,13 +52,4 @@ export function SensorSummary({ entityId, entityType }: SensorSummaryProps) {
       </dd>
     </div>
   )
-}
-
-function timeAgo(iso: string, { t, locale }: I18n): string {
-  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000)
-  if (minutes < 1) return t.common.justNow
-  if (minutes < 60) return t.common.minutesAgo(minutes)
-  const hours = Math.round(minutes / 60)
-  if (hours < 48) return t.common.hoursAgo(hours)
-  return new Date(iso).toLocaleString(locale)
 }

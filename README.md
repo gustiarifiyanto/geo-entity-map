@@ -13,8 +13,10 @@ Aplikasi web untuk menampilkan dan mengelola **entitas yang memiliki lokasi geog
   - Hak akses ditegakkan di backend (401/403), frontend hanya menyembunyikan kontrol.
 - **Dashboard** (tab *Map | Dashboard* di bar atas):
   - **Semua role:** total entitas, jumlah per status (warna sama dengan pin), dan jumlah per type.
-  - **Admin saja:** jumlah user terdaftar, *Online (last 5 min)*, dan *With an active session* (ketiganya hanya role `user`, admin tidak dihitung), plus jumlah per role. Diperbarui otomatis tiap 30 detik.
+  - **Admin saja:** jumlah user terdaftar, *Online (last 5 min)*, dan *With an active session* (ketiganya hanya role `user`, admin tidak dihitung), plus jumlah per role. Kartu *With an active session* menampilkan email akun-akunnya dengan tanda **Online** atau "terakhir aktif N menit lalu". Diperbarui otomatis tiap 30 detik.
+  - Bagian *Operating zones* berisi jumlah di luar zona, bar di dalam vs di luar, dan daftar semua kendaraan yang punya zona beserta statusnya.
   - Pindah tab tidak menghilangkan pin yang dipilih, form yang terbuka, atau posisi map.
+  - Kartu *Total entities* menampilkan daftar semua entitas, bagian pemasangan menampilkan semua entitas yang dilacak (dengan statusnya), dan bagian zona menampilkan yang di luar zona. **Setiap nama bisa diklik**: app pindah ke Map, map terbang ke pin itu, dan panel detailnya terbuka. Kalau ada form yang sedang terbuka, form itu tidak diganti supaya isian tidak hilang.
 - **Logout** lewat ikon di bar atas, selalu dengan dialog konfirmasi (semua role).
 - **Bahasa ID | EN:** tombol di bar atas dan di halaman login. Pilihan diingat di browser, dan defaultnya mengikuti bahasa browser. Teks UI, label type/status/role/metric, pesan error (termasuk dari backend), serta format tanggal dan angka ikut berganti. Data milik user (nama, deskripsi, attributes) tidak diterjemahkan.
 - **Tampilan:** bar atas transparan dengan efek blur di atas map, dan animasi halus (tab yang bergeser, panel dan dialog yang muncul perlahan, bar dashboard yang tumbuh). Semua animasi hanya memakai CSS dan otomatis mati jika sistem operasi diatur untuk mengurangi gerakan (*reduce motion*).
@@ -203,7 +205,9 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 ```json
 { "data": {
     "users": { "total": 12, "by_role": { "user": 10, "admin": 2 },
-               "with_active_session": 5, "online": 2 },
+               "with_active_session": 5, "online": 2,
+               "active_users": [ { "id": "…", "email": "budi@example.com",
+                                   "last_seen_at": "2026-10-06T07:00:00Z", "online": true } ] },
     "online_window_minutes": 5 } }
 ```
 
@@ -211,6 +215,7 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 - Yang dihitung adalah **user**, bukan session: satu user yang login di dua browser dihitung sekali.
 - `by_role` selalu berisi semua role, termasuk yang jumlahnya 0.
 - `with_active_session`: user yang punya session belum kedaluwarsa (belum logout dan belum lewat 7 hari).
+- `active_users`: daftar akun di balik angka itu (hanya role `user`, maksimal 50, yang terakhir aktif paling atas), berisi email, waktu terakhir aktif, dan status online. Endpoint ini khusus admin.
 - `online`: user dengan session aktif yang dipakai dalam `online_window_minutes` terakhir. Setiap request yang sudah login memperbarui `sessions.last_seen_at`, tetapi paling sering sekali per menit, supaya kebanyakan request hanya membaca DB. Selama tab browser terlihat, frontend memanggil `GET /api/auth/me` tiap 2 menit (*heartbeat*), jadi user yang membuka map tapi diam tetap terhitung online.
 - Statistik entitas dihitung di frontend dari `GET /api/entities`, jadi tidak perlu endpoint tambahan.
 
@@ -472,7 +477,7 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
 - Update realtime (SSE/WebSocket). Saat ini perubahan dari tab atau user lain baru terlihat saat refetch (misalnya saat window kembali difokus).
 - **Lupa password / ganti password.**
 - **Kelola user** (daftar user, menaikkan user menjadi admin, menghapus akun). Admin tambahan saat ini hanya bisa dibuat lewat `ADMIN_EMAIL`/`ADMIN_PASSWORD` dengan email baru.
-- Daftar nama user yang sedang online, serta grafik/riwayat aktivitas di dashboard.
+- Grafik/riwayat aktivitas user di dashboard.
 - Untuk foto: resize/thumbnail otomatis, crop, mengatur urutan foto, dan keterangan (caption) per foto.
 - Untuk jadwal pemasangan: riwayat perubahan tanggal, tahapan/milestone, penanggung jawab/kontraktor, dan notifikasi saat terlambat.
 - Untuk sensor: beberapa metric per perangkat, ambang batas/alarm dan notifikasi, kalibrasi, MQTT atau protokol IoT lain, dan rate limiting endpoint perangkat.

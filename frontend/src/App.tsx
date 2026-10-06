@@ -126,6 +126,21 @@ function MapScreen({ user }: { user: User }) {
     [isFormOpen, showEntity],
   )
 
+  // From the dashboard: switch to the map, fly to the entity and show its
+  // details. An open form is kept, so unsaved changes are never lost.
+  const [focus, setFocus] = useState<{ latitude: number; longitude: number } | null>(null)
+  const openOnMap = useCallback(
+    (id: string) => {
+      const entity = entities.data?.find((e) => e.id === id)
+      if (!entity) return
+      setView('map')
+      setFocus({ latitude: entity.latitude, longitude: entity.longitude })
+      if (isFormOpen) toast.error(t.dashboard.formOpen)
+      else showEntity(id)
+    },
+    [entities.data, isFormOpen, showEntity, toast, t],
+  )
+
   const handleMove = useCallback(
     (id: string, latitude: number, longitude: number) => {
       const original = entities.data?.find((e) => e.id === id)
@@ -195,6 +210,7 @@ function MapScreen({ user }: { user: User }) {
             zones={zones.data}
             zonePreview={zonePreview}
             picking={picking}
+            focus={focus}
           />
 
           <div className="pointer-events-none absolute inset-x-3 top-17 z-[1000] flex flex-col items-start gap-2">
@@ -259,7 +275,12 @@ function MapScreen({ user }: { user: User }) {
 
           {view === 'dashboard' && (
             <div className="absolute inset-0 z-[1100] animate-fade-in overflow-y-auto bg-gray-50 pt-20">
-              <Dashboard entities={entities.data} meta={meta.data} showUserStats={canManage} />
+              <Dashboard
+                  entities={entities.data}
+                  meta={meta.data}
+                  showUserStats={canManage}
+                  onOpenEntity={openOnMap}
+                />
             </div>
           )}
         </main>
