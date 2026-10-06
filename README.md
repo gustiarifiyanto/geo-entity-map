@@ -15,6 +15,8 @@ Aplikasi web untuk menampilkan dan mengelola **entitas yang memiliki lokasi geog
   - **Semua role:** total entitas, jumlah per status (warna sama dengan pin), dan jumlah per type.
   - **Admin saja:** jumlah user terdaftar, *Online (last 5 min)*, dan *With an active session* (ketiganya hanya role `user`, admin tidak dihitung), plus jumlah per role. Diperbarui otomatis tiap 30 detik.
   - Pindah tab tidak menghilangkan pin yang dipilih, form yang terbuka, atau posisi map.
+- **Logout** lewat ikon di bar atas, selalu dengan dialog konfirmasi (semua role).
+- **Tampilan:** bar atas transparan dengan efek blur di atas map, dan animasi halus (tab yang bergeser, panel dan dialog yang muncul perlahan, bar dashboard yang tumbuh). Semua animasi hanya memakai CSS dan otomatis mati jika sistem operasi diatur untuk mengurangi gerakan (*reduce motion*).
 - Semua entitas tampil sebagai pin di map. Warna pin menunjukkan status (legenda di kartu kiri atas).
 - **Tambah:** klik area kosong di map → form terbuka dengan lat/lng terisi. Selama form terbuka, klik titik lain atau geser pin hitam untuk mengubah lokasi.
 - **Detail:** klik pin → panel detail (type, status, koordinat, deskripsi, attributes, timestamp).
