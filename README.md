@@ -25,6 +25,10 @@ Aplikasi web untuk menampilkan dan mengelola **entitas yang memiliki lokasi geog
   - Semua role melihat galeri di panel detail. Klik foto untuk tampilan besar, dan pindah foto dengan tombol ‹ › atau panah keyboard.
   - Admin menambah atau menghapus foto di form *New entity* / *Edit entity*. Perubahan foto baru diproses saat *Create* / *Save changes*, dan *Cancel* membatalkan semuanya.
   - Maksimal 5 foto per entitas, 5 MB per foto, format JPEG, PNG, atau WebP.
+- **Jadwal pemasangan** untuk fasilitas dan perangkat IoT:
+  - Admin mengisi tanggal mulai, target, dan selesai (opsional) di bagian *Installation* pada form New/Edit. Bagian ini hanya muncul untuk type yang mendukungnya, berdasarkan `capabilities` dari `GET /api/meta`.
+  - Status dihitung server: *Scheduled*, *In progress*, *Overdue*, *Completed on time*, *Completed late*, plus jumlah hari berjalan dan hari terlambat.
+  - Panel detail menampilkan badge status, progress bar (bagian merah = lewat target), dan tanggal. Dashboard menampilkan jumlah per status dan daftar yang paling terlambat.
 - **Attributes** diisi lewat baris *nama → nilai* (bukan JSON mentah). Nilai seperti `5000` atau `true` tersimpan sebagai angka/boolean, sisanya sebagai teks. Attributes lama yang berisi data bertingkat otomatis diedit dalam mode JSON supaya tidak rusak.
 - **Pindah lokasi:** pilih pin, lalu drag → `PATCH /location` dengan *optimistic update*. Kalau gagal, pin kembali ke posisi semula dan muncul toast error. Setelah berhasil, toast menampilkan tombol **Undo**.
 - **Hapus:** tombol *Delete* → dialog konfirmasi.
@@ -74,6 +78,7 @@ Buka **http://localhost:5173**, lalu login dengan email dan password admin di at
 | `COOKIE_SECURE` | `false` | Set `true` jika app disajikan lewat HTTPS, supaya cookie session hanya dikirim lewat HTTPS |
 
 | `UPLOAD_DIR` | `./data/uploads` | Folder file foto, satu subfolder per entitas (relatif terhadap folder `backend/`) |
+| `APP_TIMEZONE` | `Asia/Jakarta` | Zona waktu IANA untuk menentukan "hari ini" pada status pemasangan. Nilai yang salah membuat server menolak start. |
 
 Untuk mengulang dari data contoh, hentikan backend lalu hapus folder `backend/data/`. Semua akun, session, dan foto ikut terhapus.
 
@@ -103,6 +108,11 @@ cd frontend && npm run typecheck && npm run lint
   - entitas/foto tidak ada (404), header `nosniff` dan cache saat file diambil;
   - hapus foto dan hapus entitas ikut menghapus file di disk; upload yang ditolak tidak meninggalkan file;
   - hak akses belum login / `user` / `admin`.
+- **Pemasangan** (`internal/service/installation_test.go` dengan tanggal tetap, `internal/handler/installation_test.go`):
+  - status di setiap batas: mulai besok → *scheduled*; mulai hari ini / target hari ini → *in_progress*; target kemarin → *overdue* 1 hari; selesai tepat di target atau lebih awal → *on time*; sehari setelah target → *late*;
+  - "hari ini" mengikuti `APP_TIMEZONE` (18.00 UTC tanggal 5 = tanggal 6 di Jakarta);
+  - validasi tanggal: format, tanggal yang tidak ada (`2026-02-30`), urutan, selesai di masa depan;
+  - type tanpa kemampuan → 400, entitas tidak ada → 404, urutan daftar, ganti type menyembunyikan jadwal, hapus entitas ikut menghapus jadwal, hak akses tiap role.
 - **Penyimpanan file** (`internal/storage`): tulis lewat file sementara lalu rename, nama berbahaya (`""`, `..`, `../x`, `a/b`) ditolak tanpa menghapus apa pun.
 - **Database** (`internal/database`): migrasi idempoten, seed hanya saat tabel kosong, constraint koordinat, CHECK role, email unik, hapus user ikut menghapus session, migrasi menambah `last_seen_at` ke tabel `sessions` lama tanpa kehilangan data.
 
@@ -112,7 +122,7 @@ Base path `/api`. Request dan response berformat JSON.
 
 | Method | Path | Deskripsi | Sukses |
 |---|---|---|---|
-| GET | `/api/meta` | Daftar type dan status yang diizinkan | 200 |
+| GET | `/api/meta` | Daftar type, status, dan kemampuan per type (`capabilities`) | 200 |
 | GET | `/api/entities` | List entitas, filter opsional `?type=&status=` | 200 |
 | GET | `/api/entities/{id}` | Detail entitas | 200 |
 | POST | `/api/entities` | Membuat entitas | 201 |
@@ -128,6 +138,10 @@ Base path `/api`. Request dan response berformat JSON.
 | POST | `/api/entities/{id}/photos` | Upload satu foto (`multipart/form-data`, field `photo`) | 201 |
 | GET | `/api/photos/{photoId}` | File gambar (bukan JSON) | 200 |
 | DELETE | `/api/photos/{photoId}` | Menghapus foto | 204 |
+| GET | `/api/entities/{id}/installation` | Jadwal pemasangan; `{ "data": null }` jika belum diisi | 200 |
+| PUT | `/api/entities/{id}/installation` | Isi/ubah jadwal `{ started_on, target_on, completed_on }` | 200 |
+| DELETE | `/api/entities/{id}/installation` | Hapus jadwal | 204 |
+| GET | `/api/installations` | Semua jadwal (dashboard), paling terlambat dulu | 200 |
 
 Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak pernah dikirim.
 
@@ -141,6 +155,8 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 | `GET /api/admin/stats` | 401 | 403 | ✅ |
 | `GET .../photos`, `GET /api/photos/{photoId}` | 401 | ✅ | ✅ |
 | `POST .../photos`, `DELETE /api/photos/{photoId}` | 401 | 403 | ✅ |
+| `GET .../installation`, `GET /api/installations` | 401 | ✅ | ✅ |
+| `PUT`, `DELETE .../installation` | 401 | 403 | ✅ |
 
 **Session:** login dan register memasang cookie `session` (`HttpOnly`, `SameSite=Lax`, berlaku 7 hari). Isinya token acak 32 byte; database hanya menyimpan hash SHA-256 token tersebut, sehingga file DB yang bocor tidak bisa dipakai untuk login.
 
@@ -173,6 +189,29 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 - Batas 5 foto dicek dalam satu query bersama insert, jadi dua upload bersamaan tidak bisa melewatinya.
 - `GET /api/photos/{id}` mengirim `X-Content-Type-Options: nosniff` (browser tidak menebak tipe lain) dan `Cache-Control: private, max-age=86400` (foto tidak pernah diubah, hanya dihapus).
 - Bentuk objek entitas tidak berubah; foto diambil lewat endpoint sendiri.
+
+**Kemampuan per type & jadwal pemasangan:**
+
+`GET /api/meta` mengirim `"capabilities": { "iot_device": ["installation"], "facility": ["installation"] }`. Daftar ini hanya ada di `backend/internal/model/installation.go`, dan frontend menampilkan fitur khusus berdasarkan daftar itu, tanpa menulis nama type sendiri. Perangkat IoT ditambahkan dengan mengubah satu baris di file tersebut.
+
+```json
+{ "data": { "entity_id": "…", "started_on": "2026-09-20", "target_on": "2026-10-01",
+            "completed_on": null, "status": "overdue",
+            "planned_days": 11, "elapsed_days": 16, "days_late": 5,
+            "updated_at": "2026-10-06T08:11:44Z" } }
+```
+
+| Status | Kapan |
+|---|---|
+| `scheduled` | tanggal mulai setelah hari ini |
+| `in_progress` | belum selesai, hari ini ≤ target |
+| `overdue` | belum selesai, hari ini > target |
+| `completed_on_time` | selesai ≤ target |
+| `completed_late` | selesai > target |
+
+- Status dan jumlah hari **dihitung saat diminta**, tidak disimpan, jadi selalu sesuai dengan tanggal hari ini.
+- Tanggal disimpan sebagai `YYYY-MM-DD` tanpa jam. "Hari ini" dihitung di `APP_TIMEZONE` (default `Asia/Jakarta`), supaya status berganti tengah malam WIB, bukan jam 07.00. Data zona waktu disertakan di binary (`time/tzdata`), jadi tetap jalan di Windows.
+- Endpoint jadwal untuk entitas yang type-nya tidak mendukung (misalnya kendaraan) → **400 `invalid_request`**. Kalau type entitas diganti, jadwalnya disimpan tetapi disembunyikan.
 
 Format response:
 
@@ -221,6 +260,8 @@ Keputusan tambahan yang tidak diatur di brief awal (disetujui developer):
 | `longitude` | wajib, −180 … 180, bukan NaN/Inf |
 | `description` | opsional, di-trim, maks. 500 karakter |
 | `attributes` | opsional, harus **objek** JSON (`null` = kosong). Di form diisi sebagai baris nama → nilai; nama wajib dan tidak boleh dobel |
+
+**Jadwal pemasangan:** `started_on` dan `target_on` wajib, format `YYYY-MM-DD` persis dan tanggalnya benar-benar ada; `target_on` ≥ `started_on`; `completed_on` opsional, ≥ `started_on`, dan tidak boleh setelah hari ini.
 | `created_at`, `updated_at` | RFC3339 UTC (presisi detik), diisi backend |
 
 **User:**
@@ -252,6 +293,7 @@ frontend/src/
   features/auth/           halaman login/register, hooks user saat ini + heartbeat
   features/dashboard/      ringkasan entitas, statistik user admin
   features/photos/         galeri view-only, tampilan foto besar, pemilih foto di form (draft)
+  features/installations/  bagian Installation di form, ringkasan status di panel detail, label/warna status
   features/entities/       map, marker, form, panel detail, hooks React Query, helper geo
   schemas/                 schema zod (mengikuti aturan backend)
   types/                   tipe bersama
@@ -312,6 +354,7 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
    - upload foto dipindah dari panel detail ke form *New/Edit entity*, dan saya memilih perubahan foto ikut diproses saat *Save* (bukan langsung), supaya *Cancel* tetap membatalkan semuanya;
    - kolom attributes yang awalnya berupa JSON mentah saya minta diganti dengan baris nama → nilai, karena JSON mudah salah ketik bagi user biasa;
    - saya juga menemukan kolom nilai yang "kegepeng" di editor attributes, lalu diperbaiki.
+10. **Jadwal pemasangan.** Saya meminta fitur durasi pemasangan untuk mengontrol kualitas pemasangan fasilitas. Saya menyetujui tanggal tanpa jam, status yang dihitung server, dan zona waktu Jakarta. Setelah fiturnya jadi, saya memutuskan perangkat IoT juga perlu jadwal pemasangan. Karena fitur khusus per type sejak awal dirancang lewat `capabilities` di `/api/meta`, perubahan itu cukup satu baris di backend, dan UI langsung mengikuti.
 
 ## Fitur yang Belum Selesai & Keterbatasan
 
@@ -325,7 +368,8 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
 - **Kelola user** (daftar user, menaikkan user menjadi admin, menghapus akun). Admin tambahan saat ini hanya bisa dibuat lewat `ADMIN_EMAIL`/`ADMIN_PASSWORD` dengan email baru.
 - Daftar nama user yang sedang online, serta grafik/riwayat aktivitas di dashboard.
 - Untuk foto: resize/thumbnail otomatis, crop, mengatur urutan foto, dan keterangan (caption) per foto.
-- Direncanakan (urutan sudah disepakati): durasi pemasangan fasilitas → data sensor IoT (endpoint perangkat + API key, data dummy) → live tracking kendaraan (simulator + SSE). Pilihan bahasa Indonesia/English juga ditunda.
+- Untuk jadwal pemasangan: riwayat perubahan tanggal, tahapan/milestone, penanggung jawab/kontraktor, dan notifikasi saat terlambat.
+- Direncanakan (urutan sudah disepakati): data sensor IoT (endpoint perangkat + API key, data dummy) → live tracking kendaraan (simulator + SSE). Pilihan bahasa Indonesia/English juga ditunda.
 - **Rate limiting login.** Belum ada pembatasan percobaan login berulang.
 
 **Keterbatasan yang diketahui:**
@@ -344,6 +388,8 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
 - **Isi foto hanya dicek dari tanda tangan awal file** (seperti `http.DetectContentType`), bukan di-decode penuh. File dengan header gambar yang benar tapi isinya rusak tetap diterima; browser hanya gagal menampilkannya.
 - **File foto dan baris DB tidak dalam satu transaksi.** Kalau server mati tepat di antara menyimpan file dan menulis ke DB, bisa tersisa file yatim di `UPLOAD_DIR` (tidak terlihat di app, hanya memakan ruang disk).
 - **Perubahan foto di form diproses setelah entitas tersimpan.** Kalau upload sebagian gagal, entitas tetap tersimpan dan muncul toast berisi jumlah yang gagal; foto yang gagal perlu ditambahkan ulang.
+- **Validasi "tidak boleh di masa depan" di frontend memakai tanggal browser**, sedangkan backend memakai `APP_TIMEZONE`. Kalau zona waktu browser berbeda jauh, frontend bisa lolos tapi backend menolak (atau sebaliknya). Backend tetap jadi penentu, dan entitasnya tetap tersimpan dengan toast berisi error jadwal.
+- **Nama tabel `facility_installations`** tetap dipakai walaupun sekarang juga untuk perangkat IoT, supaya tidak perlu migrasi ganti nama.
 - **Angka di attributes:** teks yang persis seperti angka (misalnya `1234`) selalu disimpan sebagai angka. Untuk memaksa disimpan sebagai teks, perlu mode JSON.
 - Backend tidak menyajikan file hasil build frontend dan tidak mengatur CORS. Untuk produksi, keduanya perlu disajikan dari origin yang sama (reverse proxy) atau CORS perlu ditambahkan.
 - **Tile OpenStreetMap** tunduk pada [Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/) dan tidak ditujukan untuk trafik produksi tinggi. Untuk produksi, gunakan penyedia tile berbayar atau host tile sendiri.
