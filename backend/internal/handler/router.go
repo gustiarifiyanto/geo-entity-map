@@ -22,6 +22,7 @@ type Services struct {
 	Auth          *service.AuthService
 	Photos        *service.PhotoService
 	Installations *service.InstallationService
+	Sensors       *service.SensorService
 }
 
 // NewRouter returns the HTTP handler for the whole API.
@@ -30,6 +31,7 @@ func NewRouter(svc Services, val *validation.Validator, opts Options) http.Handl
 	a := &authHandler{svc: svc.Auth, val: val, secureCookie: opts.SecureCookie}
 	p := &photoHandler{svc: svc.Photos}
 	inst := &installationHandler{svc: svc.Installations, val: val}
+	sens := &sensorHandler{svc: svc.Sensors, val: val}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
@@ -42,6 +44,9 @@ func NewRouter(svc Services, val *validation.Validator, opts Options) http.Handl
 	})
 
 	r.Route("/api", func(r chi.Router) {
+		// Called by IoT devices, which authenticate with their API key, not a session.
+		r.Post("/devices/{id}/readings", sens.deviceReading)
+
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", a.register)
 			r.Post("/login", a.login)
@@ -68,6 +73,11 @@ func NewRouter(svc Services, val *validation.Validator, opts Options) http.Handl
 					r.Get("/installation", inst.get)
 					r.With(requireAdmin).Put("/installation", inst.put)
 					r.With(requireAdmin).Delete("/installation", inst.delete)
+					r.Get("/sensor", sens.get)
+					r.With(requireAdmin).Put("/sensor", sens.put)
+					r.With(requireAdmin).Delete("/sensor", sens.delete)
+					r.With(requireAdmin).Post("/sensor/key", sens.createKey)
+					r.Get("/readings", sens.readings)
 				})
 			})
 			r.Get("/installations", inst.list)

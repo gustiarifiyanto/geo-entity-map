@@ -53,6 +53,7 @@ type testApp struct {
 	auth      *service.AuthService
 	db        *sql.DB
 	uploadDir string
+	sensors   *service.SensorService
 }
 
 func newApp(t *testing.T) testApp {
@@ -85,13 +86,15 @@ func newApp(t *testing.T) testApp {
 	entities := service.NewEntityService(repository.NewEntityRepository(db), files)
 	photos := service.NewPhotoService(repository.NewPhotoRepository(db), files, entities)
 	installations := service.NewInstallationService(repository.NewInstallationRepository(db), entities, time.UTC)
+	sensors := service.NewSensorService(repository.NewSensorRepository(db), entities)
 	router := handler.NewRouter(handler.Services{
 		Entities:      entities,
 		Auth:          auth,
 		Photos:        photos,
 		Installations: installations,
+		Sensors:       sensors,
 	}, val, handler.Options{})
-	return testApp{router: router, auth: auth, db: db, uploadDir: uploadDir}
+	return testApp{router: router, auth: auth, db: db, uploadDir: uploadDir, sensors: sensors}
 }
 
 // login returns a session cookie for an existing account.

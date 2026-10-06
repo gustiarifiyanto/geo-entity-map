@@ -18,7 +18,7 @@ const (
 // not listed have none. This is the single source of truth; the frontend reads
 // it from GET /api/meta.
 var TypeCapabilities = map[EntityType][]Capability{
-	TypeIoTDevice: {CapInstallation},
+	TypeIoTDevice: {CapInstallation, CapReadings},
 	TypeFacility:  {CapInstallation},
 }
 

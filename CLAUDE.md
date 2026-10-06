@@ -129,6 +129,29 @@ Tabel `facility_installations` (hanya untuk entitas yang type-nya punya kemampua
 
 Tanggal disimpan **tanpa jam** karena durasi dihitung per hari. "Hari ini" dihitung di zona waktu `APP_TIMEZONE` (default `Asia/Jakarta`), bukan UTC, supaya status tidak berubah jam 07.00 WIB.
 
+Tabel `sensor_configs` (entitas dengan kemampuan `readings`, saat ini `iot_device`):
+
+| Kolom | Tipe | Aturan |
+|---|---|---|
+| `entity_id` | TEXT PK | FK ke `entities.id`, `ON DELETE CASCADE`; satu sensor (satu metric) per perangkat |
+| `metric` | TEXT | salah satu metric di model (`temperature`, `water_level`, `wind_speed`) |
+| `api_key_hash` | TEXT UNIQUE, nullable | SHA-256 (hex) dari API key perangkat; key mentah hanya ditampilkan **sekali** saat dibuat |
+| `key_created_at` | TEXT (RFC3339, UTC), nullable | kapan key terakhir dibuat |
+| `updated_at` | TEXT (RFC3339, UTC) | diisi oleh backend |
+
+Tabel `sensor_readings`:
+
+| Kolom | Tipe | Aturan |
+|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | |
+| `entity_id` | TEXT | FK ke `entities.id`, `ON DELETE CASCADE`; index `(entity_id, recorded_at)` |
+| `metric` | TEXT | metric saat data diterima; data metric lama tidak ditampilkan setelah metric diganti |
+| `value` | REAL | dalam rentang metric |
+| `recorded_at` | TEXT (RFC3339, UTC) | waktu pengukuran (dari perangkat, atau waktu terima jika tidak dikirim) |
+| `received_at` | TEXT (RFC3339, UTC) | diisi oleh backend |
+
+Data yang `recorded_at`-nya lebih dari **7 hari** dihapus otomatis.
+
 ### Enum — satu sumber kebenaran
 
 Nilai yang diizinkan **hanya** didefinisikan di `backend/internal/model`:
@@ -136,6 +159,11 @@ Nilai yang diizinkan **hanya** didefinisikan di `backend/internal/model`:
 - `status`: `active`, `inactive`, `maintenance`
 - `role`: `user`, `admin` (tidak diekspos lewat `/api/meta`; register selalu membuat `user`)
 - **Kemampuan per type** (`capabilities`): fitur khusus yang dimiliki type tertentu. Saat ini `facility` dan `iot_device` → `installation` (IoT ditambahkan atas keputusan developer); nanti `iot_device` juga → `readings`, dan `vehicle` → `tracking`. Dikirim lewat `GET /api/meta`, jadi frontend memeriksa `meta.capabilities[type]` dan **tidak** meng-hardcode "facility".
+- `iot_device` juga punya kemampuan `readings` (data sensor).
+- `metric` (jenis sensor), dikirim lewat `GET /api/meta` sebagai `"metrics": [{ "id", "label", "unit", "min", "max" }]`:
+  - `temperature` — Temperature, °C, −50 … 80
+  - `water_level` — Water level, cm, 0 … 2000
+  - `wind_speed` — Wind speed, m/s, 0 … 100
 - `installation_status` (dihitung, tidak disimpan): `scheduled` (mulai > hari ini), `in_progress` (belum selesai, hari ini ≤ target), `overdue` (belum selesai, hari ini > target), `completed_on_time` (selesai ≤ target), `completed_late` (selesai > target)
 
 Frontend **tidak boleh** meng-hardcode daftar ini untuk dropdown. Frontend mengambilnya dari `GET /api/meta`. Menambah type baru cukup dengan mengubah daftar konstanta di Go. (Label/warna marker di frontend boleh punya fallback untuk nilai yang tidak dikenal.)
@@ -161,6 +189,24 @@ Base path: `/api`. Request dan response dalam format JSON.
 | PUT | `/api/entities/{id}/installation` | Isi/ubah data pemasangan `{ "started_on", "target_on", "completed_on" }` | 200 |
 | DELETE | `/api/entities/{id}/installation` | Menghapus data pemasangan | 204 |
 | GET | `/api/installations` | Semua data pemasangan (untuk dashboard), terlambat dulu | 200 |
+| GET | `/api/entities/{id}/sensor` | Konfigurasi sensor; `{ "data": null }` jika belum diisi | 200 |
+| PUT | `/api/entities/{id}/sensor` | Pilih metric `{ "metric" }` | 200 |
+| DELETE | `/api/entities/{id}/sensor` | Hapus konfigurasi + API key (data lama tetap sampai kedaluwarsa) | 204 |
+| POST | `/api/entities/{id}/sensor/key` | Buat (atau ganti) API key perangkat; key lama langsung tidak berlaku | 201 |
+| GET | `/api/entities/{id}/readings?hours=24` | Data sensor `hours` jam terakhir (1–168, default 24), terlama dulu | 200 |
+| POST | `/api/devices/{id}/readings` | **Dipanggil oleh perangkat**, bukan browser: `Authorization: Bearer <api key>`, body `{ "value", "recorded_at"? }` | 201 |
+
+Objek sensor: `{ "entity_id", "metric", "has_api_key", "key_created_at", "updated_at" }` (hash key tidak pernah dikirim). Respons `POST .../sensor/key`: `{ "data": { "api_key": "gem_…", "key_created_at" } }`; ini **satu-satunya** saat key mentah terlihat.
+
+Respons readings: `{ "data": { "metric": { …spec }, "readings": [ { "value", "recorded_at" } ], "latest": { … } | null } }`, hanya data dengan metric yang sedang aktif.
+
+Endpoint perangkat:
+- Key salah/tidak ada, atau key milik perangkat lain → **401 `unauthorized`** dengan pesan yang sama ("invalid device key"), tanpa membedakan penyebabnya.
+- `value` wajib, berupa angka, dalam rentang metric → 422 `fields.value` (`"is required"`, `"must be between -50 and 80"`).
+- `recorded_at` opsional, RFC3339, tidak boleh lebih dari 5 menit ke depan dan tidak lebih tua dari 7 hari → 422 `fields.recorded_at`.
+- Endpoint sensor/readings untuk type tanpa kemampuan `readings` → 400 `invalid_request`; key dibuat sebelum metric dipilih → 400 `invalid_request` "choose the sensor metric first".
+
+**Simulator data dummy:** jika `SIMULATE_SENSORS` bukan `false` (default aktif), backend mengirim satu nilai per menit untuk setiap perangkat yang sudah punya metric, lewat **service dan validasi yang sama** dengan endpoint perangkat. Nilainya naik-turun secara wajar di dalam rentang metric. Perangkat yang belum punya data 24 jam terakhir diisi riwayat 24 jam (per 15 menit) supaya grafik langsung terisi. Simulator juga menghapus data > 7 hari.
 
 `GET /api/meta` kini juga mengirim `"capabilities": { "iot_device": ["installation"], "facility": ["installation"] }` (field tambahan, field lama tidak berubah).
 
@@ -214,6 +260,9 @@ Otorisasi **wajib** dilakukan di middleware backend. Frontend hanya menyembunyik
 | `POST /api/entities/{id}/photos`, `DELETE /api/photos/{photoId}` | 401 | 403 | ✅ |
 | `GET /api/entities/{id}/installation`, `GET /api/installations` | 401 | ✅ | ✅ |
 | `PUT`, `DELETE /api/entities/{id}/installation` | 401 | 403 | ✅ |
+| `GET /api/entities/{id}/sensor`, `GET /api/entities/{id}/readings` | 401 | ✅ | ✅ |
+| `PUT`, `DELETE /api/entities/{id}/sensor`, `POST .../sensor/key` | 401 | 403 | ✅ |
+| `POST /api/devices/{id}/readings` | API key perangkat (bukan session) | – | – |
 
 ### Statistik admin
 
@@ -308,6 +357,12 @@ Frontend:
 - Panel detail (semua role) menampilkan badge status, tanggal, dan progress (`elapsed_days` / `planned_days`), plus "terlambat N hari" jika ada.
 - Dashboard (semua role): jumlah per status pemasangan dan daftar entitas (fasilitas maupun perangkat IoT) yang `overdue`.
 
+## Perilaku Sensor IoT
+
+- Form New/Edit menampilkan bagian **Sensor** hanya untuk type dengan kemampuan `readings` (dari `/api/meta`). Admin memilih metric (dari `meta.metrics`); disimpan saat Create/Save seperti bagian lain.
+- Di form Edit, admin bisa menekan **Generate API key** (langsung dikirim, karena key harus ditampilkan sekali dan disalin). Key ditampilkan dengan tombol salin dan peringatan bahwa key tidak akan ditampilkan lagi. Generate ulang mematikan key lama.
+- Panel detail (semua role): nilai terakhir + satuan + "N min ago", grafik garis 24 jam (SVG, tanpa library), refetch tiap 30 detik selama panel terbuka.
+
 ## Perilaku Map
 
 - Klik area kosong di map → buka form tambah dengan lat/lng terisi otomatis
@@ -338,7 +393,7 @@ npm run dev
 - Seed data hanya dimasukkan jika tabel masih kosong.
 - Vite mem-proxy `/api` ke backend, jadi tidak perlu setup CORS saat development.
 
-Konfigurasi lewat environment variable dengan nilai default: `PORT=8080`, `DB_PATH=./data/app.db`, `COOKIE_SECURE=false`, `UPLOAD_DIR=./data/uploads`, `APP_TIMEZONE=Asia/Jakarta`.
+Konfigurasi lewat environment variable dengan nilai default: `PORT=8080`, `DB_PATH=./data/app.db`, `COOKIE_SECURE=false`, `UPLOAD_DIR=./data/uploads`, `APP_TIMEZONE=Asia/Jakarta`, `SIMULATE_SENSORS=true`.
 
 Admin pertama: `ADMIN_EMAIL` + `ADMIN_PASSWORD`. Saat start, jika email tersebut belum terdaftar, backend membuat user ber-role `admin`. Jika env tidak diisi, server tetap jalan dan mencatat peringatan di log. Nilai ini **tidak boleh** di-commit ke repository.
 
@@ -356,6 +411,7 @@ Ekspektasi minimal:
 - Test dashboard: migrasi menambah `last_seen_at` ke tabel `sessions` lama tanpa kehilangan data, `last_seen_at` diperbarui maksimal sekali per menit, perhitungan `stats` (user dengan beberapa session dihitung sekali, session kedaluwarsa dan di luar batas online tidak dihitung), hak akses `/api/admin/stats` (401/403/200)
 - Test foto: upload JPEG/PNG/WebP (201), file teks yang diberi nama `.jpg` (422), 5 MB vs 5 MB + 1 byte, foto ke-6 (422), entitas tidak ada (404), file ikut terhapus saat foto/entitas dihapus, header `nosniff` saat file diambil, hak akses tiap role
 - Test installation: perhitungan status di setiap batas (mulai besok → scheduled; target hari ini → in_progress; target kemarin → overdue; selesai tepat di target → completed_on_time; sehari setelah target → completed_late) dengan jam palsu, validasi tanggal (format, tanggal tidak ada, urutan, masa depan), type tanpa kemampuan (400), entitas tidak ada (404), hapus entitas ikut menghapus data pemasangan, hak akses tiap role
+- Test sensor: endpoint perangkat dengan key benar (201), key salah/kosong/milik perangkat lain (401, pesan sama), key lama setelah generate ulang (401), nilai di batas rentang (−50 vs −50.1), `recorded_at` di masa depan/terlalu lama (422), key sebelum metric dipilih (400), type tanpa kemampuan (400), readings hanya metric aktif dan urut waktu, penghapusan data > 7 hari, simulator menulis lewat validasi yang sama dan tetap di dalam rentang, hak akses tiap role
 
 ## Konvensi Kode
 
@@ -416,14 +472,22 @@ Foto entitas (lanjutan di branch `feat/dashboard`, keputusan developer):
 Di luar scope foto (catat sebagai keterbatasan): resize/thumbnail otomatis, crop, urutan foto yang bisa diatur, keterangan (caption) per foto.
 
 Durasi pemasangan fasilitas (branch `feat/dashboard`):
-- [ ] Backend: `capabilities` di `/api/meta`, tabel `facility_installations`, 4 endpoint + perhitungan status di `APP_TIMEZONE` + test
-- [ ] Frontend: bagian Installation di form New/Edit (hanya type dengan kemampuan `installation`), tampilan status di panel detail
-- [ ] Frontend: ringkasan status pemasangan + daftar overdue di dashboard
-- [ ] README: endpoint, arti status, zona waktu, keterbatasan
+- [x] Backend: `capabilities` di `/api/meta`, tabel `facility_installations`, 4 endpoint + perhitungan status di `APP_TIMEZONE` + test
+- [x] Frontend: bagian Installation di form New/Edit (hanya type dengan kemampuan `installation`), tampilan status di panel detail
+- [x] Frontend: ringkasan status pemasangan + daftar overdue di dashboard
+- [x] README: endpoint, arti status, zona waktu, keterbatasan
 
 Di luar scope pemasangan (catat sebagai keterbatasan): riwayat perubahan tanggal, tahapan/milestone pemasangan, penanggung jawab/kontraktor, notifikasi saat terlambat.
 
-Rencana berikutnya (belum dikerjakan, urutan disetujui developer): data sensor IoT (endpoint perangkat + API key, data dummy) → live tracking kendaraan (simulator + SSE, posisi di memori, kendaraan yang dilacak tidak bisa di-drag). Kemampuan per type dikirim lewat `GET /api/meta` supaya frontend tidak meng-hardcode type.
+Data sensor IoT (branch `feat/dashboard`; keputusan developer: simulator di dalam backend, satu metric per perangkat, simpan 7 hari, simulator tiap 1 menit):
+- [ ] Backend: metrics di `/api/meta`, tabel `sensor_configs` + `sensor_readings`, endpoint sensor/key/readings, endpoint perangkat dengan API key + test
+- [ ] Backend: simulator + pembersihan data lama + test
+- [ ] Frontend: bagian Sensor di form (metric + Generate API key), nilai terakhir + grafik 24 jam di panel detail
+- [ ] README: cara menghubungkan alat sungguhan (contoh `curl`), metric, simulator, keterbatasan
+
+Di luar scope sensor (catat sebagai keterbatasan): beberapa metric per perangkat, ambang batas/alarm, notifikasi, rate limiting endpoint perangkat, MQTT/protokol IoT lain, kalibrasi.
+
+Rencana berikutnya (belum dikerjakan, urutan disetujui developer): live tracking kendaraan (simulator + SSE, posisi di memori, kendaraan yang dilacak tidak bisa di-drag). Kemampuan per type dikirim lewat `GET /api/meta` supaya frontend tidak meng-hardcode type.
 
 ## Aturan untuk AI Agent
 

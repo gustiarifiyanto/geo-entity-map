@@ -58,6 +58,17 @@ func New() (*Validator, error) {
 		// bcrypt only uses the first 72 bytes, so longer passwords are rejected
 		// instead of silently truncated. "max" would count characters, not bytes.
 		// A real calendar day in YYYY-MM-DD; time.Parse rejects e.g. 2026-02-30.
+		"metric": func(fl validator.FieldLevel) bool {
+			return model.Metric(fl.Field().String()).Valid()
+		},
+		"finite": func(fl validator.FieldLevel) bool {
+			f := fl.Field().Float()
+			return !math.IsNaN(f) && !math.IsInf(f, 0)
+		},
+		"rfc3339": func(fl validator.FieldLevel) bool {
+			_, err := time.Parse(time.RFC3339, fl.Field().String())
+			return err == nil
+		},
 		"date": func(fl validator.FieldLevel) bool {
 			s := fl.Field().String()
 			t, err := time.Parse(model.DateLayout, s)
@@ -142,6 +153,50 @@ func (val *Validator) Installation(in *model.InstallationInput, today time.Time)
 	return fields, nil
 }
 
+// Sensor validates the choice of a sensor metric. It returns nil when valid.
+func (val *Validator) Sensor(in *model.SensorInput) (FieldErrors, error) {
+	in.Metric = model.Metric(strings.TrimSpace(string(in.Metric)))
+	return val.check(in)
+}
+
+// Reading validates a device reading against the sensor's metric and the
+// current time: the value must be in the metric's range, and recorded_at may
+// be at most MaxReadingClockSkew ahead and at most ReadingRetention old.
+// It returns nil when the input is valid.
+func (val *Validator) Reading(in *model.ReadingInput, spec model.MetricSpec, now time.Time) (FieldErrors, error) {
+	fields, err := val.check(in)
+	if err != nil || fields != nil {
+		return fields, err
+	}
+
+	fields = FieldErrors{}
+	if v := *in.Value; v < spec.Min || v > spec.Max {
+		fields["value"] = fmt.Sprintf("must be between %g and %g", spec.Min, spec.Max)
+	}
+	if in.RecordedAt != nil {
+		// The struct rules guarantee this parses.
+		at, _ := time.Parse(time.RFC3339, *in.RecordedAt)
+		switch {
+		case at.After(now.Add(model.MaxReadingClockSkew)):
+			fields["recorded_at"] = "cannot be in the future"
+		case at.Before(now.Add(-model.ReadingRetention)):
+			fields["recorded_at"] = "cannot be older than 7 days"
+		}
+	}
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	return fields, nil
+}
+
+func metricIDs() []model.Metric {
+	ids := make([]model.Metric, len(model.Metrics))
+	for i, s := range model.Metrics {
+		ids[i] = s.ID
+	}
+	return ids
+}
+
 // Filter validates list filters. It returns nil when the filter is valid.
 func (val *Validator) Filter(f *model.EntityFilter) (FieldErrors, error) {
 	return val.check(f)
@@ -175,6 +230,12 @@ func message(fe validator.FieldError) string {
 		return fmt.Sprintf("must be at most %s bytes", fe.Param())
 	case "email":
 		return "must be a valid email address"
+	case "metric":
+		return "must be one of: " + join(metricIDs())
+	case "finite":
+		return "must be a finite number"
+	case "rfc3339":
+		return "must be a date-time (RFC3339, e.g. 2026-10-06T08:00:00Z)"
 	case "date":
 		return "must be a date (YYYY-MM-DD)"
 	case "entity_type":

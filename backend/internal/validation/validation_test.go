@@ -363,3 +363,66 @@ func TestInstallation(t *testing.T) {
 		})
 	}
 }
+
+func TestSensor(t *testing.T) {
+	v := newValidator(t)
+	for _, m := range model.Metrics {
+		in := model.SensorInput{Metric: m.ID}
+		if got, err := v.Sensor(&in); err != nil || got != nil {
+			t.Errorf("Sensor(%q) = %v, %v; want valid", m.ID, got, err)
+		}
+	}
+	in := model.SensorInput{Metric: " temperature "}
+	if got, _ := v.Sensor(&in); got != nil || in.Metric != model.MetricTemperature {
+		t.Errorf("trimmed metric: got %v, metric %q", got, in.Metric)
+	}
+	for _, bad := range []model.Metric{"", "humidity", "Temperature"} {
+		in := model.SensorInput{Metric: bad}
+		got, err := v.Sensor(&in)
+		if err != nil || got["metric"] == "" {
+			t.Errorf("Sensor(%q) = %v, %v; want a metric error", bad, got, err)
+		}
+	}
+}
+
+func TestReading(t *testing.T) {
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	spec, _ := model.MetricTemperature.Spec()
+	at := func(d time.Duration) *string { s := now.Add(d).Format(time.RFC3339); return &s }
+	tests := []struct {
+		name string
+		in   model.ReadingInput
+		want FieldErrors
+	}{
+		{"valid", model.ReadingInput{Value: ptr(27.5)}, nil},
+		{"lowest value", model.ReadingInput{Value: ptr(-50)}, nil},
+		{"highest value", model.ReadingInput{Value: ptr(80)}, nil},
+		{"zero", model.ReadingInput{Value: ptr(0)}, nil},
+		{"just below range", model.ReadingInput{Value: ptr(-50.1)}, FieldErrors{"value": "must be between -50 and 80"}},
+		{"just above range", model.ReadingInput{Value: ptr(80.1)}, FieldErrors{"value": "must be between -50 and 80"}},
+		{"missing value", model.ReadingInput{}, FieldErrors{"value": "is required"}},
+		{"recorded now", model.ReadingInput{Value: ptr(1), RecordedAt: at(0)}, nil},
+		{"recorded 5 min ahead", model.ReadingInput{Value: ptr(1), RecordedAt: at(5 * time.Minute)}, nil},
+		{"recorded 5 min 1 s ahead", model.ReadingInput{Value: ptr(1), RecordedAt: at(5*time.Minute + time.Second)},
+			FieldErrors{"recorded_at": "cannot be in the future"}},
+		{"recorded 7 days ago", model.ReadingInput{Value: ptr(1), RecordedAt: at(-7 * 24 * time.Hour)}, nil},
+		{"recorded 7 days 1 s ago", model.ReadingInput{Value: ptr(1), RecordedAt: at(-7*24*time.Hour - time.Second)},
+			FieldErrors{"recorded_at": "cannot be older than 7 days"}},
+		{"recorded_at with offset", model.ReadingInput{Value: ptr(1), RecordedAt: strPtr("2026-10-06T18:30:00+07:00")}, nil},
+		{"recorded_at not RFC3339", model.ReadingInput{Value: ptr(1), RecordedAt: strPtr("2026-10-06 12:00")},
+			FieldErrors{"recorded_at": "must be a date-time (RFC3339, e.g. 2026-10-06T08:00:00Z)"}},
+	}
+
+	v := newValidator(t)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := v.Reading(&tc.in, spec, now)
+			if err != nil {
+				t.Fatalf("Reading: unexpected error: %v", err)
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("Reading() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

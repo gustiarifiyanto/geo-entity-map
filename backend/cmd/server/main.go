@@ -20,6 +20,7 @@ import (
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/model"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/repository"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/service"
+	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/simulator"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/storage"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/validation"
 )
@@ -33,6 +34,8 @@ type config struct {
 	uploadDir     string
 	// timezone decides which calendar day "today" is for installation status.
 	timezone *time.Location
+	// simulateSensors writes dummy readings for IoT devices until real ones send data.
+	simulateSensors bool
 }
 
 func loadConfig() (config, error) {
@@ -40,18 +43,23 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return config{}, fmt.Errorf("COOKIE_SECURE must be true or false: %w", err)
 	}
+	simulate, err := strconv.ParseBool(getenv("SIMULATE_SENSORS", "true"))
+	if err != nil {
+		return config{}, fmt.Errorf("SIMULATE_SENSORS must be true or false: %w", err)
+	}
 	tz, err := time.LoadLocation(getenv("APP_TIMEZONE", "Asia/Jakarta"))
 	if err != nil {
 		return config{}, fmt.Errorf("APP_TIMEZONE must be an IANA time zone such as Asia/Jakarta: %w", err)
 	}
 	return config{
-		port:          getenv("PORT", "8080"),
-		dbPath:        getenv("DB_PATH", "./data/app.db"),
-		cookieSecure:  secure,
-		adminEmail:    os.Getenv("ADMIN_EMAIL"),
-		adminPassword: os.Getenv("ADMIN_PASSWORD"),
-		uploadDir:     getenv("UPLOAD_DIR", "./data/uploads"),
-		timezone:      tz,
+		port:            getenv("PORT", "8080"),
+		dbPath:          getenv("DB_PATH", "./data/app.db"),
+		cookieSecure:    secure,
+		adminEmail:      os.Getenv("ADMIN_EMAIL"),
+		adminPassword:   os.Getenv("ADMIN_PASSWORD"),
+		uploadDir:       getenv("UPLOAD_DIR", "./data/uploads"),
+		timezone:        tz,
+		simulateSensors: simulate,
 	}, nil
 }
 
@@ -102,6 +110,7 @@ func run() error {
 	entities := service.NewEntityService(repository.NewEntityRepository(db), files)
 	photos := service.NewPhotoService(repository.NewPhotoRepository(db), files, entities)
 	installations := service.NewInstallationService(repository.NewInstallationRepository(db), entities, cfg.timezone)
+	sensors := service.NewSensorService(repository.NewSensorRepository(db), entities)
 	auth, err := service.NewAuthService(repository.NewUserRepository(db), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -114,6 +123,7 @@ func run() error {
 		Auth:          auth,
 		Photos:        photos,
 		Installations: installations,
+		Sensors:       sensors,
 	}, val, handler.Options{SecureCookie: cfg.cookieSecure})
 
 	srv := &http.Server{
@@ -123,6 +133,11 @@ func run() error {
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       60 * time.Second,
+	}
+
+	if cfg.simulateSensors {
+		slog.Info("sensor simulator enabled: dummy readings every minute (SIMULATE_SENSORS=false to turn off)")
+		go simulator.New(sensors, val, uint64(time.Now().UnixNano())).Run(ctx, time.Minute)
 	}
 
 	errCh := make(chan error, 1)
