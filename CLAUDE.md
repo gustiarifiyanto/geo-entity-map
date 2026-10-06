@@ -540,10 +540,10 @@ Data sensor IoT (branch `feat/dashboard`; keputusan developer: simulator di dala
 Di luar scope sensor (catat sebagai keterbatasan): beberapa metric per perangkat, ambang batas/alarm, notifikasi, rate limiting endpoint perangkat, MQTT/protokol IoT lain, kalibrasi.
 
 Zona operasional kendaraan (branch `feat/dashboard`; keputusan developer: dikerjakan sebelum live tracking, lingkaran, pin di luar zona hanya ditandai, pusat bisa dipilih di map, radius 100 m – 50 km):
-- [ ] Backend: kemampuan `geofence`, tabel `geofences`, 4 endpoint, perhitungan jarak/inside + test
-- [ ] Frontend: bagian Operating zone di form (termasuk "Pick on map"), lingkaran zona di map + pratinjau saat form terbuka, toast saat drag ke luar zona
-- [ ] Frontend: status zona di panel detail + ringkasan di luar zona di dashboard
-- [ ] README: endpoint, perilaku, keterbatasan
+- [x] Backend: kemampuan `geofence`, tabel `geofences`, 4 endpoint, perhitungan jarak/inside + test
+- [x] Frontend: bagian Operating zone di form (termasuk "Pick on map"), lingkaran zona di map + pratinjau saat form terbuka, toast saat drag ke luar zona
+- [x] Frontend: status zona di panel detail + ringkasan di luar zona di dashboard
+- [x] README: endpoint, perilaku, keterbatasan
 
 Di luar scope zona (catat sebagai keterbatasan): zona poligon, beberapa zona per kendaraan, jadwal zona per jam, riwayat keluar-masuk zona, notifikasi.
 
