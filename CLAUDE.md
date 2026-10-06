@@ -232,7 +232,7 @@ Frontend:
 - Hanya `admin` yang melihat **statistik user** dari `GET /api/admin/stats`. Frontend tidak memanggil endpoint ini untuk role `user`.
 - Statistik user di-refetch tiap 30 detik selama tab Dashboard terbuka dan tab browser terlihat.
 - **Heartbeat:** selama tab browser terlihat, frontend memanggil `GET /api/auth/me` tiap 2 menit supaya user yang membuka app tapi diam tetap terhitung online.
-- Label di UI harus jujur: "Online (5 menit terakhir)" dan "Sesi aktif", bukan "sedang login".
+- Label di UI harus jujur (UI berbahasa Inggris): "Online (last 5 min)" dan "With an active session", bukan "logged in now".
 
 ## Perilaku Map
 

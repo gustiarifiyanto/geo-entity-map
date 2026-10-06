@@ -5,6 +5,9 @@ import type { User } from '../../types/auth'
 
 export const meKey = ['auth', 'me'] as const
 
+/** Shorter than the backend's 5-minute online window, so an open tab stays online. */
+const HEARTBEAT_MS = 2 * 60_000
+
 /**
  * The logged-in user, or null when logged out. A 401 is the normal
  * "logged out" answer here, not an error.
@@ -22,6 +25,11 @@ export function useMe() {
     },
     // Changes only through login/logout below, or a 401 from another request.
     staleTime: Infinity,
+    // Heartbeat: while logged in and the tab is visible, tell the backend the
+    // user is still here so an idle open map counts as online. A 401 here
+    // means the session expired and shows the login screen.
+    refetchInterval: (query) => (query.state.data ? HEARTBEAT_MS : false),
+    refetchIntervalInBackground: false,
   })
 }
 
