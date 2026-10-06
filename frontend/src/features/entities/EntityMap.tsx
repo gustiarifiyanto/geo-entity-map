@@ -10,6 +10,7 @@ import {
   useMapEvents,
   ZoomControl,
 } from 'react-leaflet'
+import { useI18n } from '../../i18n/context'
 import type { Entity } from '../../types/entity'
 import type { Geofence } from '../../types/geofence'
 import type { ZonePreview } from '../geofences/zoneEditor'
@@ -57,6 +58,7 @@ export function EntityMap({
   zonePreview = null,
   picking = false,
 }: EntityMapProps) {
+  const { t } = useI18n()
   return (
     <MapContainer
       center={DEFAULT_CENTER}
@@ -128,7 +130,7 @@ export function EntityMap({
               onDraftMove?.(latitude, longitude)
             },
           }}
-          title="New entity location"
+          title={t.map.newLocation}
         />
       )}
     </MapContainer>

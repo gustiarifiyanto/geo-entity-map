@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useI18n } from '../../i18n/context'
 import type { Photo } from '../../types/photo'
 
 interface PhotoViewerProps {
@@ -15,6 +16,7 @@ interface PhotoViewerProps {
  * Arrow keys and the side buttons move between photos.
  */
 export function PhotoViewer({ photos, index, title, onIndexChange, onClose }: PhotoViewerProps) {
+  const { t } = useI18n()
   const ref = useRef<HTMLDialogElement>(null)
   const open = index !== null && photos[index] !== undefined
 
@@ -34,7 +36,7 @@ export function PhotoViewer({ photos, index, title, onIndexChange, onClose }: Ph
   return (
     <dialog
       ref={ref}
-      aria-label={index !== null ? `${title}, photo ${index + 1} of ${photos.length}` : title}
+      aria-label={index !== null ? t.photos.viewerLabel(title, index + 1, photos.length) : title}
       onCancel={(event) => {
         // Escape key: let React state drive closing.
         event.preventDefault()
@@ -61,7 +63,7 @@ export function PhotoViewer({ photos, index, title, onIndexChange, onClose }: Ph
             <button
               type="button"
               onClick={onClose}
-              aria-label="Close photo"
+              aria-label={t.photos.close}
               autoFocus
               className="rounded-md p-1 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
             >
@@ -76,13 +78,13 @@ export function PhotoViewer({ photos, index, title, onIndexChange, onClose }: Ph
               // key: restart the fade when switching photos.
               key={photo.id}
               src={photo.url}
-              alt={`${title}, photo ${index + 1}`}
+              alt={t.photos.viewerLabel(title, index + 1, photos.length)}
               className="max-h-[calc(90vh-2.75rem)] w-auto animate-fade-in object-contain"
             />
             {hasMany && (
               <>
-                <NavButton label="Previous photo" side="left" onClick={() => go(-1)} />
-                <NavButton label="Next photo" side="right" onClick={() => go(1)} />
+                <NavButton label={t.photos.previous} side="left" onClick={() => go(-1)} />
+                <NavButton label={t.photos.next} side="right" onClick={() => go(1)} />
               </>
             )}
           </div>

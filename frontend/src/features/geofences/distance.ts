@@ -11,8 +11,8 @@ export function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: n
 }
 
 /** 850 m, 1.2 km, 12 km. */
-export function formatDistance(meters: number): string {
-  if (meters < 1000) return `${Math.round(meters)} m`
+export function formatDistance(meters: number, locale?: string): string {
+  if (meters < 1000) return `${Math.round(meters).toLocaleString(locale)} m`
   const km = meters / 1000
-  return `${km.toLocaleString(undefined, { maximumFractionDigits: km < 10 ? 1 : 0 })} km`
+  return `${km.toLocaleString(locale, { maximumFractionDigits: km < 10 ? 1 : 0 })} km`
 }

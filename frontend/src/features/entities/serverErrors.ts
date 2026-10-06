@@ -20,9 +20,13 @@ const isFormField = (field: string): field is FormField =>
 /**
  * Shows a failed submit on the form: 422 field errors go under their inputs
  * (backend keys are the JSON field names, which match the form fields);
- * anything else becomes a form-level error.
+ * anything else becomes a form-level error, translated with errorText.
  */
-export function applyServerError(error: unknown, setError: UseFormSetError<EntityFormValues>) {
+export function applyServerError(
+  error: unknown,
+  setError: UseFormSetError<EntityFormValues>,
+  errorText: (error: unknown) => string,
+) {
   if (error instanceof ApiError && error.isValidation) {
     const unmapped: string[] = []
     let first = true
@@ -37,7 +41,7 @@ export function applyServerError(error: unknown, setError: UseFormSetError<Entit
     if (unmapped.length > 0 || first) {
       setError('root.server', {
         type: 'server',
-        message: unmapped.length > 0 ? unmapped.join('; ') : error.message,
+        message: unmapped.length > 0 ? unmapped.join('; ') : errorText(error),
       })
     }
     return
@@ -45,6 +49,6 @@ export function applyServerError(error: unknown, setError: UseFormSetError<Entit
 
   setError('root.server', {
     type: 'server',
-    message: error instanceof Error ? error.message : 'Something went wrong. Please try again.',
+    message: errorText(error),
   })
 }

@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useI18n } from '../i18n/context'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -28,6 +29,7 @@ export function ConfirmDialog({
   onCancel,
   tone = 'danger',
 }: ConfirmDialogProps) {
+  const { t } = useI18n()
   const ref = useRef<HTMLDialogElement>(null)
   // Unique per dialog: several dialogs can be mounted at once.
   const titleId = useId()
@@ -71,7 +73,7 @@ export function ConfirmDialog({
             autoFocus
             className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-60"
           >
-            Cancel
+            {t.common.cancel}
           </button>
           <button
             type="button"

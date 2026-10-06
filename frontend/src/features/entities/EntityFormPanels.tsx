@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useToast } from '../../components/toast/context'
+import { useI18n } from '../../i18n/context'
 import { CAP_GEOFENCE, CAP_INSTALLATION, CAP_READINGS, hasCapability } from '../../schemas/capabilities'
 import { emptyFormValues, entityToFormValues, type EntityExtras } from '../../schemas/entity'
 import type { Entity, Meta } from '../../types/entity'
@@ -40,15 +41,16 @@ interface FollowUpResult {
  */
 function useFollowUpFailureToast() {
   const toast = useToast()
+  const { t, sentence } = useI18n()
   return ({ photos, installation, sensor, geofence }: FollowUpResult) => {
     const problems: string[] = []
     if (photos.failed > 0) {
-      problems.push(`${photos.failed} photo change${photos.failed > 1 ? 's' : ''} (${photos.firstError})`)
+      problems.push(t.form.photoChanges(photos.failed, sentence(photos.firstError ?? '')))
     }
-    if (installation) problems.push(`the installation schedule (${installation})`)
-    if (sensor) problems.push(`the sensor (${sensor})`)
-    if (geofence) problems.push(`the operating zone (${geofence})`)
-    if (problems.length > 0) toast.error(`Saved, but these failed: ${problems.join('; ')}`)
+    if (installation) problems.push(t.form.installationPart(sentence(installation)))
+    if (sensor) problems.push(t.form.sensorPart(sentence(sensor)))
+    if (geofence) problems.push(t.form.zonePart(sentence(geofence)))
+    if (problems.length > 0) toast.error(t.form.followUpFailed(problems.join('; ')))
   }
 }
 
@@ -91,6 +93,7 @@ interface CreateEntityPanelProps {
 }
 
 export function CreateEntityPanel({ meta, latitude, longitude, onCreated, onCancel }: CreateEntityPanelProps) {
+  const { t } = useI18n()
   const create = useCreateEntity()
   const saveFollowUps = useSaveFollowUps()
   const [photos, setPhotos] = useState<PhotoDraft>(EMPTY_PHOTO_DRAFT)
@@ -98,12 +101,12 @@ export function CreateEntityPanel({ meta, latitude, longitude, onCreated, onCanc
   return (
     <EntityForm
       meta={meta}
-      title="New entity"
-      submitLabel="Create"
+      title={t.form.newTitle}
+      submitLabel={t.common.create}
       defaultValues={emptyFormValues(latitude, longitude)}
       pickedLatitude={latitude}
       pickedLongitude={longitude}
-      locationHint="Click the map or drag the black pin to change the location."
+      locationHint={t.form.locationHint}
       extraFields={<PhotoField existing={[]} draft={photos} onChange={setPhotos} />}
       onSubmit={async (input, extras) => {
         // Extras need the new entity's id, so they follow it.
@@ -124,6 +127,7 @@ interface EditEntityPanelProps {
 }
 
 export function EditEntityPanel({ meta, entity, onSaved, onCancel }: EditEntityPanelProps) {
+  const { t, errorText } = useI18n()
   const installation = useInstallation(entity.id, hasCapability(meta, entity.type, CAP_INSTALLATION))
   const sensor = useSensor(entity.id, hasCapability(meta, entity.type, CAP_READINGS))
   const geofence = useGeofence(entity.id, hasCapability(meta, entity.type, CAP_GEOFENCE))
@@ -133,10 +137,10 @@ export function EditEntityPanel({ meta, entity, onSaved, onCancel }: EditEntityP
   const loading = [installation, sensor, geofence].some((q) => q.isPending && q.fetchStatus !== 'idle')
   const failed = [installation, sensor, geofence].find((q) => q.isError)
   if (loading) {
-    return <PanelMessage>Loading…</PanelMessage>
+    return <PanelMessage>{t.common.loading}</PanelMessage>
   }
   if (failed?.error) {
-    return <PanelMessage>Could not load this entity: {failed.error.message}</PanelMessage>
+    return <PanelMessage>{t.form.loadFailed(errorText(failed.error))}</PanelMessage>
   }
   return (
     <EditEntityForm
@@ -160,6 +164,7 @@ function EditEntityForm({
   onSaved,
   onCancel,
 }: EditEntityPanelProps & { stored: StoredExtrasData }) {
+  const { t, errorText } = useI18n()
   const update = useUpdateEntity()
   const existing = usePhotos(entity.id)
   const saveFollowUps = useSaveFollowUps()
@@ -168,18 +173,18 @@ function EditEntityForm({
   return (
     <EntityForm
       meta={meta}
-      title="Edit entity"
+      title={t.form.editTitle}
       entityId={entity.id}
-      submitLabel="Save changes"
+      submitLabel={t.common.save}
       defaultValues={entityToFormValues(entity, stored)}
       extraFields={
         <>
           {/* Keys are made right away (they must be shown once), so only for a saved sensor. */}
           {stored.sensor && <DeviceKeyPanel entityId={entity.id} sensor={stored.sensor} />}
           {existing.isPending ? (
-            <p className="text-sm text-gray-400">Loading photos…</p>
+            <p className="text-sm text-gray-400">{t.photos.loading}</p>
           ) : existing.isError ? (
-            <p className="text-sm text-red-600">Photos could not be loaded: {existing.error.message}</p>
+            <p className="text-sm text-red-600">{t.photos.loadFailed(errorText(existing.error))}</p>
           ) : (
             <PhotoField existing={existing.data} draft={photos} onChange={setPhotos} />
           )}

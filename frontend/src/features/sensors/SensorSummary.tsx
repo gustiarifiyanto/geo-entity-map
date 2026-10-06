@@ -1,3 +1,4 @@
+import { useI18n, type I18n } from '../../i18n/context'
 import { CAP_READINGS, hasCapability } from '../../schemas/capabilities'
 import { useMeta } from '../entities/hooks'
 import { useReadings } from './hooks'
@@ -10,6 +11,8 @@ interface SensorSummaryProps {
 
 /** Latest reading and a 24-hour chart for the detail panel; nothing for types without sensors. */
 export function SensorSummary({ entityId, entityType }: SensorSummaryProps) {
+  const i18n = useI18n()
+  const { t, value, errorText, locale } = i18n
   const meta = useMeta()
   const enabled = hasCapability(meta.data, entityType, CAP_READINGS)
   const readings = useReadings(entityId, enabled)
@@ -18,29 +21,29 @@ export function SensorSummary({ entityId, entityType }: SensorSummaryProps) {
 
   return (
     <div>
-      <dt className="text-xs font-medium tracking-wide text-gray-400 uppercase">Sensor</dt>
+      <dt className="text-xs font-medium tracking-wide text-gray-400 uppercase">{t.sensor.section}</dt>
       <dd className="mt-1 text-gray-900">
         {readings.isPending ? (
-          <span className="text-gray-400">Loading…</span>
+          <span className="text-gray-400">{t.common.loading}</span>
         ) : readings.isError ? (
-          <span className="text-red-700">{readings.error.message}</span>
+          <span className="text-red-700">{errorText(readings.error)}</span>
         ) : readings.data === null ? (
-          <span className="text-gray-400">No sensor set up</span>
+          <span className="text-gray-400">{t.sensor.notSetUp}</span>
         ) : (
           <div className="space-y-2">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-xs text-gray-500">{readings.data.metric.label}</span>
+              <span className="text-xs text-gray-500">{value(readings.data.metric.id, readings.data.metric.label)}</span>
               {readings.data.latest && (
-                <span className="text-xs text-gray-400">{timeAgo(readings.data.latest.recorded_at)}</span>
+                <span className="text-xs text-gray-400">{timeAgo(readings.data.latest.recorded_at, i18n)}</span>
               )}
             </div>
             {readings.data.latest ? (
               <p className="text-2xl font-semibold text-gray-900">
-                {readings.data.latest.value.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                {readings.data.latest.value.toLocaleString(locale, { maximumFractionDigits: 1 })}
                 <span className="ml-1 text-sm font-normal text-gray-500">{readings.data.metric.unit}</span>
               </p>
             ) : (
-              <p className="text-gray-400">No readings yet</p>
+              <p className="text-gray-400">{t.sensor.noReadings}</p>
             )}
             <ReadingsChart readings={readings.data.readings} metric={readings.data.metric} />
           </div>
@@ -50,11 +53,11 @@ export function SensorSummary({ entityId, entityType }: SensorSummaryProps) {
   )
 }
 
-function timeAgo(iso: string): string {
+function timeAgo(iso: string, { t, locale }: I18n): string {
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes} min ago`
+  if (minutes < 1) return t.common.justNow
+  if (minutes < 60) return t.common.minutesAgo(minutes)
   const hours = Math.round(minutes / 60)
-  if (hours < 48) return `${hours} h ago`
-  return new Date(iso).toLocaleString()
+  if (hours < 48) return t.common.hoursAgo(hours)
+  return new Date(iso).toLocaleString(locale)
 }

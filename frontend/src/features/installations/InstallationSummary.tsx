@@ -2,7 +2,8 @@ import type { Installation } from '../../types/installation'
 import { CAP_INSTALLATION, hasCapability } from '../../schemas/capabilities'
 import { useMeta } from '../entities/hooks'
 import { useInstallation } from './hooks'
-import { daysText, formatDay, installationStatusColor, installationStatusLabel } from './status'
+import { useI18n } from '../../i18n/context'
+import { formatDay, installationStatusColor } from './status'
 
 interface InstallationSummaryProps {
   entityId: string
@@ -11,6 +12,7 @@ interface InstallationSummaryProps {
 
 /** Installation status for the detail panel; renders nothing for types without the capability. */
 export function InstallationSummary({ entityId, entityType }: InstallationSummaryProps) {
+  const { t, errorText } = useI18n()
   const meta = useMeta()
   const enabled = hasCapability(meta.data, entityType, CAP_INSTALLATION)
   const installation = useInstallation(entityId, enabled)
@@ -19,14 +21,14 @@ export function InstallationSummary({ entityId, entityType }: InstallationSummar
 
   return (
     <div>
-      <dt className="text-xs font-medium tracking-wide text-gray-400 uppercase">Installation</dt>
+      <dt className="text-xs font-medium tracking-wide text-gray-400 uppercase">{t.installation.section}</dt>
       <dd className="mt-1 text-gray-900">
         {installation.isPending ? (
-          <span className="text-gray-400">Loading…</span>
+          <span className="text-gray-400">{t.common.loading}</span>
         ) : installation.isError ? (
-          <span className="text-red-700">{installation.error.message}</span>
+          <span className="text-red-700">{errorText(installation.error)}</span>
         ) : installation.data === null ? (
-          <span className="text-gray-400">No installation schedule</span>
+          <span className="text-gray-400">{t.installation.none}</span>
         ) : (
           <ScheduleDetails installation={installation.data} />
         )}
@@ -36,15 +38,18 @@ export function InstallationSummary({ entityId, entityType }: InstallationSummar
 }
 
 export function InstallationStatusBadge({ status }: { status: string }) {
+  const { value } = useI18n()
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: installationStatusColor(status) }} />
-      {installationStatusLabel(status)}
+      {value(status)}
     </span>
   )
 }
 
 function ScheduleDetails({ installation: i }: { installation: Installation }) {
+  const { t, locale } = useI18n()
+  const days = t.common.days
   const planned = Math.max(1, i.planned_days)
   // The bar shows the planned span; time past the target spills over in red.
   const onTime = Math.min(i.elapsed_days, planned)
@@ -57,7 +62,7 @@ function ScheduleDetails({ installation: i }: { installation: Installation }) {
         <InstallationStatusBadge status={i.status} />
         {i.days_late > 0 && (
           <span className="text-xs font-medium text-red-600">
-            {daysText(i.days_late)} late{done ? '' : ' so far'}
+            {done ? t.installation.late(days(i.days_late)) : t.installation.lateSoFar(days(i.days_late))}
           </span>
         )}
       </div>
@@ -65,7 +70,7 @@ function ScheduleDetails({ installation: i }: { installation: Installation }) {
       <div
         className="flex h-2 overflow-hidden rounded-full bg-gray-100"
         role="img"
-        aria-label={`${daysText(i.elapsed_days)} of ${daysText(i.planned_days)} planned`}
+        aria-label={t.installation.progress(days(i.elapsed_days), days(i.planned_days))}
       >
         <div className="h-full animate-grow-x bg-gray-700" style={{ width: `${(onTime / total) * 100}%` }} />
         {i.elapsed_days > planned && (
@@ -73,13 +78,15 @@ function ScheduleDetails({ installation: i }: { installation: Installation }) {
         )}
       </div>
       <p className="text-xs text-gray-500">
-        {daysText(i.elapsed_days)} {done ? 'taken' : 'so far'} · {daysText(i.planned_days)} planned
+        {done
+          ? t.installation.taken(days(i.elapsed_days), days(i.planned_days))
+          : t.installation.soFar(days(i.elapsed_days), days(i.planned_days))}
       </p>
 
       <dl className="grid grid-cols-3 gap-2 text-xs">
-        <DateItem label="Started" value={formatDay(i.started_on)} />
-        <DateItem label="Target" value={formatDay(i.target_on)} />
-        <DateItem label="Completed" value={i.completed_on ? formatDay(i.completed_on) : '—'} />
+        <DateItem label={t.installation.started} value={formatDay(i.started_on, locale)} />
+        <DateItem label={t.installation.target} value={formatDay(i.target_on, locale)} />
+        <DateItem label={t.installation.completed} value={i.completed_on ? formatDay(i.completed_on, locale) : '—'} />
       </dl>
     </div>
   )

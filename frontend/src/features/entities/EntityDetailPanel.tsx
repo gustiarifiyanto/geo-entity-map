@@ -4,7 +4,8 @@ import { GeofenceSummary } from '../geofences/GeofenceSummary'
 import { InstallationSummary } from '../installations/InstallationSummary'
 import { SensorSummary } from '../sensors/SensorSummary'
 import { PhotoGallery } from '../photos/PhotoGallery'
-import { formatLabel, statusColor } from './labels'
+import { useI18n } from '../../i18n/context'
+import { statusColor } from './labels'
 
 interface EntityDetailPanelProps {
   entity: Entity
@@ -22,6 +23,7 @@ export function EntityDetailPanel({
   onDelete,
   movable,
 }: EntityDetailPanelProps) {
+  const { t, value, locale } = useI18n()
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       // An open dialog (photo viewer, confirmation) handles Escape itself.
@@ -35,7 +37,7 @@ export function EntityDetailPanel({
 
   return (
     <aside
-      aria-label="Entity details"
+      aria-label={t.detail.label}
       className="flex max-h-full flex-col overflow-hidden rounded-xl bg-white shadow-xl ring-1 ring-black/5"
     >
       <header className="flex items-start justify-between gap-3 border-b border-gray-100 p-4">
@@ -45,7 +47,7 @@ export function EntityDetailPanel({
           </h2>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
             <span className="rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-700">
-              {formatLabel(entity.type)}
+              {value(entity.type)}
             </span>
             <StatusBadge status={entity.status} />
           </div>
@@ -53,7 +55,7 @@ export function EntityDetailPanel({
         <button
           type="button"
           onClick={onClose}
-          aria-label="Close details"
+          aria-label={t.detail.close}
           className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
         >
           <svg viewBox="0 0 20 20" className="h-5 w-5" fill="currentColor" aria-hidden="true">
@@ -63,24 +65,24 @@ export function EntityDetailPanel({
       </header>
 
       <dl className="flex-1 space-y-4 overflow-y-auto p-4 text-sm">
-        <Field label="Coordinates">
+        <Field label={t.detail.coordinates}>
           <span className="font-mono">
             {entity.latitude.toFixed(6)}, {entity.longitude.toFixed(6)}
           </span>
-          {movable && <p className="mt-1 text-xs text-gray-500">Drag the highlighted pin on the map to move it.</p>}
+          {movable && <p className="mt-1 text-xs text-gray-500">{t.detail.dragHint}</p>}
         </Field>
         <GeofenceSummary entityId={entity.id} entityType={entity.type} />
         <SensorSummary entityId={entity.id} entityType={entity.type} />
         <InstallationSummary entityId={entity.id} entityType={entity.type} />
-        <Field label="Photos">
+        <Field label={t.detail.photos}>
           <PhotoGallery entityId={entity.id} entityName={entity.name} />
         </Field>
-        <Field label="Description">
-          {entity.description || <span className="text-gray-400">No description</span>}
+        <Field label={t.detail.description}>
+          {entity.description || <span className="text-gray-400">{t.detail.noDescription}</span>}
         </Field>
-        <Field label="Attributes">
+        <Field label={t.detail.attributes}>
           {attributes.length === 0 ? (
-            <span className="text-gray-400">No attributes</span>
+            <span className="text-gray-400">{t.detail.noAttributes}</span>
           ) : (
             <ul className="divide-y divide-gray-100 rounded-md border border-gray-100">
               {attributes.map(([key, value]) => (
@@ -95,8 +97,8 @@ export function EntityDetailPanel({
           )}
         </Field>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Created">{formatDate(entity.created_at)}</Field>
-          <Field label="Updated">{formatDate(entity.updated_at)}</Field>
+          <Field label={t.detail.created}>{formatDate(entity.created_at, locale)}</Field>
+          <Field label={t.detail.updated}>{formatDate(entity.updated_at, locale)}</Field>
         </div>
       </dl>
 
@@ -108,7 +110,7 @@ export function EntityDetailPanel({
               onClick={onEdit}
               className="flex-1 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700"
             >
-              Edit
+              {t.common.edit}
             </button>
           )}
           {onDelete && (
@@ -117,7 +119,7 @@ export function EntityDetailPanel({
               onClick={onDelete}
               className="flex-1 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
             >
-              Delete
+              {t.common.delete}
             </button>
           )}
         </footer>
@@ -127,10 +129,11 @@ export function EntityDetailPanel({
 }
 
 export function StatusBadge({ status }: { status: string }) {
+  const { value } = useI18n()
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-700">
       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: statusColor(status) }} />
-      {formatLabel(status)}
+      {value(status)}
     </span>
   )
 }
@@ -144,7 +147,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, locale: string): string {
   const date = new Date(iso)
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString()
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString(locale)
 }

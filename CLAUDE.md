@@ -414,6 +414,15 @@ Frontend:
 - Panel detail (semua role): radius, dan "Inside (1.2 km from center)" atau badge merah "Outside zone by 800 m".
 - Dashboard (semua role): jumlah entitas di luar zona dan daftarnya.
 
+## Bahasa (ID | EN)
+
+- UI tersedia dalam **English** dan **Bahasa Indonesia**. Pilihan ada di bar atas dan di halaman login (tombol `ID | EN`), disimpan di `localStorage` (dibungkus try/catch), default mengikuti bahasa browser (`id*` → ID, selain itu EN). `<html lang>` ikut diganti.
+- **Tanpa library**: kamus di `frontend/src/i18n/` (`en.ts` sebagai acuan, `id.ts` wajib punya key yang sama, dicek TypeScript). Teks UI tidak boleh ditulis langsung di komponen; ambil dari kamus.
+- **Backend dan kontrak API tidak berubah.** Pesan validasi tetap fragmen bahasa Inggris (`"is required"`, `"must be between -90 and 90"`); frontend menerjemahkannya saat ditampilkan dengan tabel pola yang dikenal. Pesan yang tidak dikenal ditampilkan apa adanya (bahasa Inggris), jadi tidak ada error yang hilang.
+- Nilai dari backend (type, status, role, metric, status pemasangan) diterjemahkan jika ada di kamus; nilai baru yang belum ada memakai label cadangan seperti sekarang.
+- Tanggal dan angka diformat dengan locale bahasa yang dipilih (`id-ID` / `en-US`).
+- Data milik user (nama entitas, deskripsi, attributes) **tidak** diterjemahkan.
+
 ## Perilaku Map
 
 - Klik area kosong di map → buka form tambah dengan lat/lng terisi otomatis
@@ -546,6 +555,14 @@ Zona operasional kendaraan (branch `feat/dashboard`; keputusan developer: dikerj
 - [x] README: endpoint, perilaku, keterbatasan
 
 Di luar scope zona (catat sebagai keterbatasan): zona poligon, beberapa zona per kendaraan, jadwal zona per jam, riwayat keluar-masuk zona, notifikasi.
+
+Pilihan bahasa ID | EN (branch `feat/dashboard`, keputusan developer; frontend saja):
+- [ ] Kamus `en`/`id` + provider + tombol ID | EN (bar atas dan halaman login), disimpan di browser
+- [ ] Semua teks UI, label nilai backend, tanggal/angka mengikuti bahasa
+- [ ] Terjemahan pesan error backend/zod dengan tabel pola + fallback apa adanya
+- [ ] README: cara kerja, cara menambah teks/bahasa, keterbatasan
+
+Di luar scope bahasa (catat sebagai keterbatasan): bahasa lain, terjemahan dari backend (Accept-Language), terjemahan data milik user.
 
 Rencana berikutnya (belum dikerjakan, ditunda oleh developer): live tracking kendaraan (simulator + SSE, posisi di memori, kendaraan yang dilacak tidak bisa di-drag), memakai fungsi pengecekan zona yang sama untuk menandai/mencatat saat kendaraan keluar zona. Kemampuan per type dikirim lewat `GET /api/meta` supaya frontend tidak meng-hardcode type.
 

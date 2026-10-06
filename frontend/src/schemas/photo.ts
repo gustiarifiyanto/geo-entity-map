@@ -35,7 +35,7 @@ export async function checkPhotoFile(file: File, existingCount: number): Promise
   return null
 }
 
-/** Turns a photo error fragment into a sentence, e.g. "is required" -> "Photo is required". */
-export function photoErrorText(message: string): string {
-  return /^(is|must) /.test(message) ? `Photo ${message}` : message[0].toUpperCase() + message.slice(1)
+/** True for fragments that read after the field label ("is required"), false for whole messages. */
+export function isFieldFragment(message: string): boolean {
+  return /^(is|must) /.test(message)
 }

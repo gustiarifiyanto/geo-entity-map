@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useWatch, type Control, type FieldErrors, type UseFormRegister, type UseFormSetValue } from 'react-hook-form'
 import { inputClass } from '../../components/formStyles'
+import { useI18n } from '../../i18n/context'
 import type { EntityFormOutput, EntityFormValues } from '../../schemas/entity'
 import { MAX_RADIUS_M, MIN_RADIUS_M } from '../../schemas/geofence'
 import { formatDistance } from './distance'
@@ -16,9 +17,9 @@ interface GeofenceFieldsProps {
 }
 
 const NUMBER_FIELDS = [
-  { name: 'radius_m', label: 'Radius (m)', step: '100' },
-  { name: 'center_latitude', label: 'Center latitude', step: 'any' },
-  { name: 'center_longitude', label: 'Center longitude', step: 'any' },
+  { name: 'radius_m', labelKey: 'radius', errorKey: 'radiusShort', step: '100' },
+  { name: 'center_latitude', labelKey: 'centerLatitude', errorKey: 'centerLatitude', step: 'any' },
+  { name: 'center_longitude', labelKey: 'centerLongitude', errorKey: 'centerLongitude', step: 'any' },
 ] as const
 
 /**
@@ -26,6 +27,7 @@ const NUMBER_FIELDS = [
  * while editing; it is saved together with the form.
  */
 export function GeofenceFields({ entityId, register, control, setValue, errors }: GeofenceFieldsProps) {
+  const { t, fieldError, locale } = useI18n()
   const zoneEditor = useZoneEditor()
   const { startPicking, cancelPicking, setPreview } = zoneEditor
   const zone = useWatch({ control, name: 'geofence' })
@@ -66,16 +68,17 @@ export function GeofenceFields({ entityId, register, control, setValue, errors }
 
   return (
     <fieldset className="rounded-lg border border-gray-200 p-3">
-      <legend className="px-1 text-sm font-medium text-gray-700">Operating zone</legend>
+      <legend className="px-1 text-sm font-medium text-gray-700">{t.zone.section}</legend>
       <label className="flex items-center gap-2 text-sm text-gray-700">
         <input type="checkbox" className="h-4 w-4 rounded border-gray-300" {...register('geofence.enabled')} />
-        Limit to an operating zone
+        {t.zone.limit}
       </label>
 
       {zone.enabled && (
         <div className="mt-3 animate-fade-in space-y-2">
           <div className="grid grid-cols-3 gap-2">
-            {NUMBER_FIELDS.map(({ name, label, step }) => {
+            {NUMBER_FIELDS.map(({ name, labelKey, errorKey, step }) => {
+              const label = t.zone[labelKey]
               const error = errors?.[name]?.message
               const id = `geofence-${name}`
               return (
@@ -94,7 +97,7 @@ export function GeofenceFields({ entityId, register, control, setValue, errors }
                   />
                   {error && (
                     <p className="mt-1 text-xs text-red-600" role="alert">
-                      {label.replace(' (m)', '')} {error}
+                      {fieldError(t.zone[errorKey], error)}
                     </p>
                   )}
                 </div>
@@ -103,8 +106,10 @@ export function GeofenceFields({ entityId, register, control, setValue, errors }
           </div>
 
           <p className="text-xs text-gray-500">
-            {Number.isFinite(zone.radius_m) && zone.radius_m > 0 ? `${formatDistance(zone.radius_m)} around the center. ` : ''}
-            The vehicle may still be moved outside; it is then flagged.
+            {Number.isFinite(zone.radius_m) && zone.radius_m > 0
+              ? `${t.zone.around(formatDistance(zone.radius_m, locale))} `
+              : ''}
+            {t.zone.mayLeave}
           </p>
 
           <div className="flex flex-wrap gap-2">
@@ -114,7 +119,7 @@ export function GeofenceFields({ entityId, register, control, setValue, errors }
               disabled={!Number.isFinite(pinLatitude) || !Number.isFinite(pinLongitude)}
               className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
             >
-              Use pin position
+              {t.zone.usePin}
             </button>
             <button
               type="button"
@@ -126,7 +131,7 @@ export function GeofenceFields({ entityId, register, control, setValue, errors }
                   : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
               }`}
             >
-              {zoneEditor.picking ? 'Click the map… (cancel)' : 'Pick on map'}
+              {zoneEditor.picking ? t.zone.picking : t.zone.pick}
             </button>
           </div>
         </div>

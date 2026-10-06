@@ -3,6 +3,7 @@ import { AppBar, type View } from './components/AppBar'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { useToast } from './components/toast/context'
 import { AuthScreen } from './features/auth/AuthScreen'
+import { useI18n } from './i18n/context'
 import { useLogout, useMe } from './features/auth/hooks'
 import { Dashboard } from './features/dashboard/Dashboard'
 import { DeleteEntityDialog } from './features/entities/DeleteEntityDialog'
@@ -28,6 +29,7 @@ const NO_PANEL: Panel = { kind: 'none' }
 
 function App() {
   const me = useMe()
+  const { t, errorText } = useI18n()
 
   // Data first: a failed background heartbeat (e.g. the backend restarting)
   // must not replace the map with an error screen.
@@ -36,14 +38,14 @@ function App() {
     return <MapScreen key={me.data.id} user={me.data} />
   }
   if (me.isPending) {
-    return <CenteredMessage>Loading…</CenteredMessage>
+    return <CenteredMessage>{t.common.loading}</CenteredMessage>
   }
   if (me.isError) {
     return (
       <CenteredMessage>
-        <p className="text-red-700">{me.error.message}</p>
+        <p className="text-red-700">{errorText(me.error)}</p>
         <button type="button" onClick={() => void me.refetch()} className="mt-2 font-medium underline">
-          Retry
+          {t.common.retry}
         </button>
       </CenteredMessage>
     )
@@ -59,6 +61,7 @@ function CenteredMessage({ children }: { children: ReactNode }) {
 function MapScreen({ user }: { user: User }) {
   const canManage = user.role === ADMIN_ROLE
   const logout = useLogout()
+  const { t, errorText, locale } = useI18n()
   const meta = useMeta()
   const entities = useEntities()
   const [view, setView] = useState<View>('map')
@@ -134,8 +137,8 @@ function MapScreen({ user }: { user: User }) {
         updateLocation.mutate(
           { id, location: previous },
           {
-            onSuccess: () => toast.success(`"${name}" moved back.`),
-            onError: (error) => toast.error(`Could not undo the move of "${name}": ${error.message}`),
+            onSuccess: () => toast.success(t.map.movedBack(name)),
+            onError: (error) => toast.error(t.map.undoFailed(name, errorText(error))),
           },
         )
 
@@ -143,25 +146,25 @@ function MapScreen({ user }: { user: User }) {
         { id, location: { latitude, longitude } },
         {
           onSuccess: () => {
-            const action = { label: 'Undo', onClick: undo }
+            const action = { label: t.common.undo, onClick: undo }
             // Moving outside the zone is allowed, but the admin is warned.
             const zone = zones.data?.find((z) => z.entity_id === id)
             const distance = zone && distanceMeters(zone.center_latitude, zone.center_longitude, latitude, longitude)
             if (zone && distance !== undefined && distance > zone.radius_m) {
               toast.error(
-                `"${name}" is now outside its operating zone (by ${formatDistance(distance - zone.radius_m)}).`,
+                t.map.movedOutside(name, formatDistance(distance - zone.radius_m, locale)),
                 { action },
               )
             } else {
-              toast.success(`"${name}" moved.`, { action })
+              toast.success(t.map.moved(name), { action })
             }
           },
           // The hook has already restored the previous position.
-          onError: (error) => toast.error(`Could not move "${name}": ${error.message}`),
+          onError: (error) => toast.error(t.map.moveFailed(name, errorText(error))),
         },
       )
     },
-    [entities.data, updateLocation, toast, zones.data],
+    [entities.data, updateLocation, toast, zones.data, t, errorText, locale],
   )
 
   const error = entities.error ?? meta.error
@@ -203,7 +206,7 @@ function MapScreen({ user }: { user: User }) {
                 role="alert"
                 className="pointer-events-auto flex animate-fade-in-up items-center gap-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 shadow ring-1 ring-red-200"
               >
-                <span>{error.message}</span>
+                <span>{errorText(error)}</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -212,7 +215,7 @@ function MapScreen({ user }: { user: User }) {
                   }}
                   className="font-medium underline"
                 >
-                  Retry
+                  {t.common.retry}
                 </button>
               </div>
             )}
@@ -264,9 +267,9 @@ function MapScreen({ user }: { user: User }) {
 
       <ConfirmDialog
         open={confirmLogout}
-        title="Log out?"
-        confirmLabel="Log out"
-        pendingLabel="Logging out…"
+        title={t.logout.title}
+        confirmLabel={t.logout.confirm}
+        pendingLabel={t.logout.pending}
         pending={logout.isPending}
         tone="neutral"
         onConfirm={() =>
@@ -274,16 +277,13 @@ function MapScreen({ user }: { user: User }) {
             // On success the login screen replaces this one.
             onError: (err) => {
               setConfirmLogout(false)
-              toast.error(`Could not log out: ${err.message}`)
+              toast.error(t.logout.failed(errorText(err)))
             },
           })
         }
         onCancel={() => setConfirmLogout(false)}
       >
-        <p>
-          You are logged in as <span className="font-medium text-gray-900">{user.email}</span>. You will need to log in
-          again to use the map.
-        </p>
+        <p>{t.logout.body(user.email)}</p>
       </ConfirmDialog>
 
       <DeleteEntityDialog

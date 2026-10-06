@@ -16,6 +16,7 @@ Aplikasi web untuk menampilkan dan mengelola **entitas yang memiliki lokasi geog
   - **Admin saja:** jumlah user terdaftar, *Online (last 5 min)*, dan *With an active session* (ketiganya hanya role `user`, admin tidak dihitung), plus jumlah per role. Diperbarui otomatis tiap 30 detik.
   - Pindah tab tidak menghilangkan pin yang dipilih, form yang terbuka, atau posisi map.
 - **Logout** lewat ikon di bar atas, selalu dengan dialog konfirmasi (semua role).
+- **Bahasa ID | EN:** tombol di bar atas dan di halaman login. Pilihan diingat di browser, dan defaultnya mengikuti bahasa browser. Teks UI, label type/status/role/metric, pesan error (termasuk dari backend), serta format tanggal dan angka ikut berganti. Data milik user (nama, deskripsi, attributes) tidak diterjemahkan.
 - **Tampilan:** bar atas transparan dengan efek blur di atas map, dan animasi halus (tab yang bergeser, panel dan dialog yang muncul perlahan, bar dashboard yang tumbuh). Semua animasi hanya memakai CSS dan otomatis mati jika sistem operasi diatur untuk mengurangi gerakan (*reduce motion*).
 - Semua entitas tampil sebagai pin di map. Warna pin menunjukkan status (legenda di kartu kiri atas).
 - **Tambah:** klik area kosong di map → form terbuka dengan lat/lng terisi. Selama form terbuka, klik titik lain atau geser pin hitam untuk mengubah lokasi.
@@ -383,12 +384,25 @@ frontend/src/
   features/installations/  bagian Installation di form, ringkasan status di panel detail, label/warna status
   features/sensors/        bagian Sensor di form, panel API key, nilai terakhir + grafik 24 jam (SVG)
   features/geofences/      bagian Operating zone di form, "Pick on map" + pratinjau (context ZoneEditor), status zona, rumus jarak
+  i18n/                    kamus en (acuan) + id, provider, penerjemah label nilai dan pesan error backend
   features/entities/       map, marker, form, panel detail, hooks React Query, helper geo
   schemas/                 schema zod (mengikuti aturan backend)
   types/                   tipe bersama
 ```
 
 Layering backend: `handler → service → repository`. Handler tidak menjalankan SQL, dan repository tidak tahu soal HTTP.
+
+## Bahasa (ID | EN)
+
+Terjemahan **sepenuhnya di frontend dan tanpa library**. Backend dan kontrak API tidak berubah, dan semua pesan API tetap dalam bahasa Inggris.
+
+- `frontend/src/i18n/en.ts` adalah kamus acuan. `id.ts` bertipe `Messages = typeof en`, jadi **key yang hilang atau salah tulis langsung jadi error TypeScript**. Teks yang berisi nilai berbentuk fungsi (misalnya `entityCount: (n) => …`), sehingga kedua bahasa menerima parameter yang sama dan bisa mengatur bentuk jamak sendiri.
+- Komponen mengambil teks lewat `useI18n()`: `t` (kamus), `value()` (label type/status/role/metric/status pemasangan), `fieldError()`, `sentence()`, `errorText()`, dan `locale` (`en-US` / `id-ID`) untuk tanggal dan angka.
+- **Pesan dari backend dan zod** berupa fragmen bahasa Inggris (`"must be between -90 and 90"`). Fragmen ini **disimpan apa adanya** dan baru diterjemahkan saat ditampilkan, lewat tabel pola di `i18n/translate.ts` (`Lintang harus di antara -90 dan 90`). Setiap pesan error yang ada di kode backend sudah dicek masuk tabel. Pesan yang tidak dikenal ditampilkan apa adanya dalam bahasa Inggris, jadi error tidak pernah hilang.
+- Nilai baru dari backend (misalnya type baru) yang belum ada di kamus tetap tampil dengan label cadangan (`rocket_ship` → "Rocket Ship"), atau memakai label yang dikirim backend (untuk metric).
+- Pilihan bahasa disimpan di `localStorage` (dibungkus try/catch). Kalau storage tidak tersedia, tombolnya tetap bekerja selama halaman terbuka. `<html lang>` ikut diganti.
+
+**Menambah teks:** tambahkan key di `en.ts`, lalu typecheck akan menunjukkan bahwa `id.ts` juga harus diisi. **Menambah bahasa:** buat file baru bertipe `Messages`, tambahkan tabel pola di `translate.ts`, lalu daftarkan di provider dan `LanguageSwitch`.
 
 ## Alasan Pemilihan Library
 
@@ -446,6 +460,7 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
 10. **Jadwal pemasangan.** Saya meminta fitur durasi pemasangan untuk mengontrol kualitas pemasangan fasilitas. Saya menyetujui tanggal tanpa jam, status yang dihitung server, dan zona waktu Jakarta. Setelah fiturnya jadi, saya memutuskan perangkat IoT juga perlu jadwal pemasangan. Karena fitur khusus per type sejak awal dirancang lewat `capabilities` di `/api/meta`, perubahan itu cukup satu baris di backend, dan UI langsung mengikuti.
 11. **Sensor IoT.** Saya ingin app ini siap dihubungkan ke alat sungguhan (perekam suhu, ketinggian air, kecepatan angin), tapi untuk sekarang memakai data dummy. Saya memilih simulator di dalam backend, satu metric per perangkat, data disimpan 7 hari, dan kiriman tiap menit. Syarat yang saya pegang: data dummy harus lewat jalur validasi yang sama dengan alat asli, supaya waktu alat sungguhan dipasang tidak ada kode yang perlu diubah. Saya mengetes alurnya langsung, termasuk mengirim data dengan `curl` memakai key dari UI dan memastikan key lama ditolak setelah *Regenerate*.
 12. **Zona operasional sebelum live tracking.** Sebelum membangun live tracking, saya mengusulkan alternatif: kendaraan punya zona radius tempat ia boleh dipakai. Setelah membandingkan ukuran pekerjaan dan risikonya, saya memutuskan membuat zona dulu, karena zona juga menjadi dasar live tracking nanti. Keputusan yang saya ambil: bentuk lingkaran, pin di luar zona hanya ditandai (bukan ditolak), titik pusat bisa dipilih di map, dan radius 100 m – 50 km. Waktu pengecekan, AI menemukan bahwa zod v4 menolak `NaN` dari input angka yang dikosongkan, yang bisa memblokir Save walaupun zona dimatikan, lalu memperbaikinya sebelum saya mengetes.
+13. **Pilihan bahasa.** Saya meminta UI tersedia dalam Bahasa Indonesia dan English. Keputusan yang saya setujui: tanpa library, backend tidak diubah, dan nama type/status ikut diterjemahkan dengan label cadangan untuk nilai baru. Supaya tidak ada pesan yang terlewat, AI mengumpulkan semua pesan error langsung dari kode backend dan mengecek bahwa masing-masing punya terjemahan.
 
 ## Fitur yang Belum Selesai & Keterbatasan
 
@@ -462,8 +477,7 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
 - Untuk jadwal pemasangan: riwayat perubahan tanggal, tahapan/milestone, penanggung jawab/kontraktor, dan notifikasi saat terlambat.
 - Untuk sensor: beberapa metric per perangkat, ambang batas/alarm dan notifikasi, kalibrasi, MQTT atau protokol IoT lain, dan rate limiting endpoint perangkat.
 - Untuk zona: zona poligon, beberapa zona per kendaraan, zona per jam/hari, riwayat keluar-masuk zona, dan notifikasi.
-- Direncanakan (ditunda): **live tracking kendaraan** (simulator rute + SSE), yang akan memakai `model.ZoneStatus` untuk mencatat saat kendaraan keluar zona. Pilihan bahasa Indonesia/English juga ditunda.
-- **Rate limiting login.** Belum ada pembatasan percobaan login berulang.
+- Direncanakan (ditunda): **live tracking kendaraan** (simulator rute + SSE), yang akan memakai `model.ZoneStatus` untuk mencatat saat kendaraan keluar zona.- **Rate limiting login.** Belum ada pembatasan percobaan login berulang.
 
 **Keterbatasan yang diketahui:**
 
@@ -482,6 +496,7 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
 - **File foto dan baris DB tidak dalam satu transaksi.** Kalau server mati tepat di antara menyimpan file dan menulis ke DB, bisa tersisa file yatim di `UPLOAD_DIR` (tidak terlihat di app, hanya memakan ruang disk).
 - **Perubahan foto di form diproses setelah entitas tersimpan.** Kalau upload sebagian gagal, entitas tetap tersimpan dan muncul toast berisi jumlah yang gagal; foto yang gagal perlu ditambahkan ulang.
 - **Validasi "tidak boleh di masa depan" di frontend memakai tanggal browser**, sedangkan backend memakai `APP_TIMEZONE`. Kalau zona waktu browser berbeda jauh, frontend bisa lolos tapi backend menolak (atau sebaliknya). Backend tetap jadi penentu, dan entitasnya tetap tersimpan dengan toast berisi error jadwal.
+- **Bahasa:** hanya ID dan EN. Pesan error yang sedang tampil di form login tidak berganti bahasa sampai form disubmit lagi (pesan field lainnya langsung berganti). Pesan baru dari backend yang belum masuk tabel pola akan tampil dalam bahasa Inggris. Tidak ada terjemahan dari sisi server (`Accept-Language`).
 - **Status zona memakai posisi pin di map**, bukan GPS. Selama belum ada live tracking, "di luar zona" berarti admin meletakkan pin di luar zona, bukan kendaraan yang benar-benar keluar.
 - **Jarak dihitung dengan bola sempurna (haversine)**, selisihnya bisa sampai ±0.5% dibanding perhitungan elipsoid. Untuk radius 100 m – 50 km itu paling banyak sekitar ±250 m di tepi zona terbesar.
 - **Endpoint perangkat belum dibatasi kecepatannya (rate limiting).** Alat dengan key yang benar bisa mengirim data sebanyak apa pun. Datanya tetap tervalidasi dan otomatis terhapus setelah 7 hari.

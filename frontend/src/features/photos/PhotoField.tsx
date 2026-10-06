@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { checkPhotoFile, MAX_PHOTOS_PER_ENTITY, PHOTO_ACCEPT, photoErrorText } from '../../schemas/photo'
+import { useI18n } from '../../i18n/context'
+import { checkPhotoFile, isFieldFragment, MAX_PHOTOS_PER_ENTITY, PHOTO_ACCEPT } from '../../schemas/photo'
 import type { Photo } from '../../types/photo'
 import type { PhotoDraft, StagedPhoto } from './draft'
 
@@ -12,13 +13,20 @@ interface PhotoFieldProps {
 
 let nextKey = 0
 
+/** A rejected file: kept as the raw (English) fragment and translated when shown. */
+interface PhotoProblem {
+  file?: string
+  message: string
+}
+
 /**
  * Photo picker for the entity form. Adding or removing only changes the
  * draft; the panel uploads and deletes after the entity is saved.
  */
 export function PhotoField({ existing, draft, onChange }: PhotoFieldProps) {
+  const { t, fieldError, sentence } = useI18n()
   const input = useRef<HTMLInputElement>(null)
-  const [errors, setErrors] = useState<string[]>([])
+  const [errors, setErrors] = useState<PhotoProblem[]>([])
 
   // Revoke preview URLs when the form closes.
   const latest = useRef(draft)
@@ -36,12 +44,12 @@ export function PhotoField({ existing, draft, onChange }: PhotoFieldProps) {
     // Reset so choosing the same file again still fires a change event.
     event.target.value = ''
 
-    const problems: string[] = []
+    const problems: PhotoProblem[] = []
     const added: StagedPhoto[] = []
     for (const file of files) {
       const problem = await checkPhotoFile(file, total + added.length)
       if (problem) {
-        problems.push(`${file.name}: ${photoErrorText(problem)}`)
+        problems.push({ file: file.name, message: problem })
         continue
       }
       added.push({ key: `staged-${nextKey++}`, file, previewUrl: URL.createObjectURL(file) })
@@ -59,7 +67,7 @@ export function PhotoField({ existing, draft, onChange }: PhotoFieldProps) {
     const removing = !draft.removedIds.includes(id)
     // Undoing a removal must still respect the limit.
     if (!removing && isFull) {
-      setErrors([photoErrorText(`this entity already has the maximum of ${MAX_PHOTOS_PER_ENTITY} photos`)])
+      setErrors([{ message: `this entity already has the maximum of ${MAX_PHOTOS_PER_ENTITY} photos` }])
       return
     }
     setErrors([])
@@ -70,8 +78,8 @@ export function PhotoField({ existing, draft, onChange }: PhotoFieldProps) {
   }
 
   const summary = [
-    draft.added.length > 0 && `${draft.added.length} to add`,
-    draft.removedIds.length > 0 && `${draft.removedIds.length} to remove`,
+    draft.added.length > 0 && t.photos.toAdd(draft.added.length),
+    draft.removedIds.length > 0 && t.photos.toRemove(draft.removedIds.length),
   ]
     .filter(Boolean)
     .join(', ')
@@ -80,7 +88,7 @@ export function PhotoField({ existing, draft, onChange }: PhotoFieldProps) {
     <div>
       <div className="mb-1 flex items-baseline justify-between">
         <span className="text-sm font-medium text-gray-700">
-          Photos <span className="ml-1 font-normal text-gray-400">(optional)</span>
+          {t.photos.field} <span className="ml-1 font-normal text-gray-400">{t.common.optional}</span>
         </span>
         <span className="text-xs text-gray-400">
           {total}/{MAX_PHOTOS_PER_ENTITY}
@@ -95,8 +103,8 @@ export function PhotoField({ existing, draft, onChange }: PhotoFieldProps) {
               key={photo.id}
               src={photo.url}
               dimmed={removed}
-              badge={removed ? 'Removed' : undefined}
-              actionLabel={removed ? 'Keep photo' : 'Remove photo'}
+              badge={removed ? t.photos.removed : undefined}
+              actionLabel={removed ? t.photos.keep : t.photos.remove}
               actionIcon={removed ? 'undo' : 'remove'}
               onAction={() => toggleRemove(photo.id)}
             />
@@ -106,8 +114,8 @@ export function PhotoField({ existing, draft, onChange }: PhotoFieldProps) {
           <Thumb
             key={photo.key}
             src={photo.previewUrl}
-            badge="New"
-            actionLabel={`Remove ${photo.file.name}`}
+            badge={t.photos.newBadge}
+            actionLabel={t.photos.removeFile(photo.file.name)}
             actionIcon="remove"
             onAction={() => dropStaged(photo)}
           />
@@ -117,8 +125,8 @@ export function PhotoField({ existing, draft, onChange }: PhotoFieldProps) {
             <button
               type="button"
               onClick={() => input.current?.click()}
-              aria-label="Add photos"
-              title="Add photos"
+              aria-label={t.photos.add}
+              title={t.photos.add}
               className="flex aspect-square w-full items-center justify-center rounded-lg border-2 border-dashed border-gray-300 text-gray-400 transition-colors hover:border-gray-400 hover:text-gray-600"
             >
               <svg viewBox="0 0 20 20" className="h-6 w-6" fill="currentColor" aria-hidden="true">
@@ -140,13 +148,16 @@ export function PhotoField({ existing, draft, onChange }: PhotoFieldProps) {
         tabIndex={-1}
       />
       <p className="mt-1 text-xs text-gray-500">
-        JPEG, PNG or WebP, max 5 MB each. {summary ? `${summary} when you save.` : 'Saved together with the form.'}
+        {t.photos.rules} {summary ? t.photos.pending(summary) : t.photos.savedWithForm}
       </p>
-      {errors.map((message) => (
-        <p key={message} className="mt-1 text-xs text-red-600" role="alert">
-          {message}
-        </p>
-      ))}
+      {errors.map(({ file, message }) => {
+        const text = isFieldFragment(message) ? fieldError(t.photos.single, message) : sentence(message)
+        return (
+          <p key={`${file}-${message}`} className="mt-1 text-xs text-red-600" role="alert">
+            {file ? `${file}: ${text}` : text}
+          </p>
+        )
+      })}
     </div>
   )
 }
