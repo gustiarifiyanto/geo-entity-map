@@ -5,6 +5,8 @@ Aplikasi web untuk menampilkan dan mengelola **entitas yang memiliki lokasi geog
 - **Backend:** Go + chi + SQLite (`modernc.org/sqlite`, tanpa CGO)
 - **Frontend:** React + Vite + TypeScript (strict) + Leaflet + React Query + react-hook-form/zod + Tailwind CSS
 
+> **Untuk tester:** ringkasan cara menjalankan, alasan pemilihan library, dan workflow AI ada di [DOCUMENTATION.md](DOCUMENTATION.md). Alasan pilihan database, API design, state management, map, dan styling ada di [TECH_DECISIONS.md](TECH_DECISIONS.md).
+
 ## Fitur
 
 - **Login/register** dengan dua role:
