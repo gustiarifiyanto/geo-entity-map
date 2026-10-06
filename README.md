@@ -5,17 +5,23 @@ Aplikasi web untuk menampilkan dan mengelola **entitas yang memiliki lokasi geog
 - **Backend:** Go + chi + SQLite (`modernc.org/sqlite`, tanpa CGO)
 - **Frontend:** React + Vite + TypeScript (strict) + Leaflet + React Query + react-hook-form/zod + Tailwind CSS
 
+> **Untuk tester:** ringkasan cara menjalankan, alasan pemilihan library, dan workflow AI ada di [DOCUMENTATION.md](DOCUMENTATION.md). Alasan pilihan database, API design, state management, map, dan styling ada di [TECH_DECISIONS.md](TECH_DECISIONS.md).
+
 ## Fitur
 
 - **Login/register** dengan dua role:
   - **`admin`** bisa menambah, mengedit, memindah, dan menghapus entitas.
   - **`user`** hanya bisa melihat map dan detail. Register publik selalu membuat role `user`.
   - Hak akses ditegakkan di backend (401/403), frontend hanya menyembunyikan kontrol.
+  - Mode demo opsional (`DEMO_ACCOUNTS=true`): kartu akun demo admin dan user di halaman login, klik untuk mengisi form.
 - **Dashboard** (tab *Map | Dashboard* di bar atas):
   - **Semua role:** total entitas, jumlah per status (warna sama dengan pin), dan jumlah per type.
-  - **Admin saja:** jumlah user terdaftar, *Online (last 5 min)*, dan *With an active session* (ketiganya hanya role `user`, admin tidak dihitung), plus jumlah per role. Diperbarui otomatis tiap 30 detik.
+  - **Admin saja:** jumlah user terdaftar, *Online (last 5 min)*, dan *With an active session* (ketiganya hanya role `user`, admin tidak dihitung), plus jumlah per role. Kartu *With an active session* menampilkan email akun-akunnya dengan tanda **Online** atau "terakhir aktif N menit lalu". Diperbarui otomatis tiap 30 detik.
+  - Bagian *Operating zones* berisi jumlah di luar zona, bar di dalam vs di luar, dan daftar semua kendaraan yang punya zona beserta statusnya.
   - Pindah tab tidak menghilangkan pin yang dipilih, form yang terbuka, atau posisi map.
+  - Kartu *Total entities* menampilkan daftar semua entitas, bagian pemasangan menampilkan semua entitas yang dilacak (dengan statusnya), dan bagian zona menampilkan yang di luar zona. **Setiap nama bisa diklik**: app pindah ke Map, map terbang ke pin itu, dan panel detailnya terbuka. Kalau ada form yang sedang terbuka, form itu tidak diganti supaya isian tidak hilang.
 - **Logout** lewat ikon di bar atas, selalu dengan dialog konfirmasi (semua role).
+- **Bahasa ID | EN:** tombol di bar atas dan di halaman login. Pilihan diingat di browser, dan defaultnya mengikuti bahasa browser. Teks UI, label type/status/role/metric, pesan error (termasuk dari backend), serta format tanggal dan angka ikut berganti. Data milik user (nama, deskripsi, attributes) tidak diterjemahkan.
 - **Tampilan:** bar atas transparan dengan efek blur di atas map, dan animasi halus (tab yang bergeser, panel dan dialog yang muncul perlahan, bar dashboard yang tumbuh). Semua animasi hanya memakai CSS dan otomatis mati jika sistem operasi diatur untuk mengurangi gerakan (*reduce motion*).
 - Semua entitas tampil sebagai pin di map. Warna pin menunjukkan status (legenda di kartu kiri atas).
 - **Tambah:** klik area kosong di map → form terbuka dengan lat/lng terisi. Selama form terbuka, klik titik lain atau geser pin hitam untuk mengubah lokasi.
@@ -25,9 +31,24 @@ Aplikasi web untuk menampilkan dan mengelola **entitas yang memiliki lokasi geog
   - Semua role melihat galeri di panel detail. Klik foto untuk tampilan besar, dan pindah foto dengan tombol ‹ › atau panah keyboard.
   - Admin menambah atau menghapus foto di form *New entity* / *Edit entity*. Perubahan foto baru diproses saat *Create* / *Save changes*, dan *Cancel* membatalkan semuanya.
   - Maksimal 5 foto per entitas, 5 MB per foto, format JPEG, PNG, atau WebP.
+- **Jadwal pemasangan** untuk fasilitas dan perangkat IoT:
+  - Admin mengisi tanggal mulai, target, dan selesai (opsional) di bagian *Installation* pada form New/Edit. Bagian ini hanya muncul untuk type yang mendukungnya, berdasarkan `capabilities` dari `GET /api/meta`.
+  - Status dihitung server: *Scheduled*, *In progress*, *Overdue*, *Completed on time*, *Completed late*, plus jumlah hari berjalan dan hari terlambat.
+  - Panel detail menampilkan badge status, progress bar (bagian merah = lewat target), dan tanggal. Dashboard menampilkan jumlah per status dan daftar yang paling terlambat.
+- **Sensor IoT:**
+  - Admin memilih apa yang diukur perangkat (*Temperature* °C, *Water level* cm, *Wind speed* m/s) di bagian *Sensor* pada form.
+  - Di form Edit, admin membuat **API key perangkat**. Key ditampilkan sekali saja, lengkap dengan tombol salin dan contoh `curl`.
+  - Panel detail menampilkan nilai terakhir, "N min ago", dan grafik 24 jam dengan tooltip saat di-hover. Datanya diperbarui tiap 30 detik.
+  - Selama belum ada alat sungguhan, **simulator** di backend mengirim data dummy tiap menit.
+- **Zona operasional kendaraan:**
+  - Admin memberi kendaraan zona berbentuk lingkaran (pusat + radius 100 m – 50 km) di bagian *Operating zone* pada form. Titik pusat bisa diisi angka, lewat *Use pin position*, atau lewat **Pick on map** (klik map berikutnya mengisi pusat zona).
+  - Map menggambar lingkaran zona: abu-abu kalau kendaraan di dalam, **merah** kalau di luar. Saat form terbuka, lingkaran biru menampilkan pratinjau langsung dari isian form.
+  - Pin **tetap boleh** dipindah ke luar zona, tapi muncul toast peringatan (dengan Undo). Panel detail dan dashboard menampilkan siapa saja yang di luar zona dan seberapa jauh.
 - **Attributes** diisi lewat baris *nama → nilai* (bukan JSON mentah). Nilai seperti `5000` atau `true` tersimpan sebagai angka/boolean, sisanya sebagai teks. Attributes lama yang berisi data bertingkat otomatis diedit dalam mode JSON supaya tidak rusak.
 - **Pindah lokasi:** pilih pin, lalu drag → `PATCH /location` dengan *optimistic update*. Kalau gagal, pin kembali ke posisi semula dan muncul toast error. Setelah berhasil, toast menampilkan tombol **Undo**.
 - **Hapus:** tombol *Delete* → dialog konfirmasi.
+- **Cari & filter di peta:** kartu di bawah legenda untuk mencari entitas berdasarkan nama (tidak membedakan huruf besar/kecil maupun aksen) dan menyaring status. Hasilnya muncul sebagai daftar; klik nama (atau tekan Enter untuk hasil pertama) untuk terbang ke pin dan membuka detailnya. Selama pencarian/filter aktif, peta hanya menampilkan pin yang cocok.
+- **Panduan untuk admin:** tombol "?" di pojok kiri bawah peta (hanya untuk admin) membuka popup cara membuat entitas baru dan penjelasan setiap bagian form. Bagian yang khusus type tertentu otomatis menyebut type yang mendukungnya, sesuai `/api/meta`.
 - **Validasi di kedua sisi** dengan aturan dan pesan yang sama. Error 422 dari backend dipetakan ke field form yang sesuai.
 - Daftar type dan status **tidak di-hardcode** di frontend, melainkan diambil dari `GET /api/meta`.
 
@@ -38,7 +59,7 @@ Kebutuhan: **Go 1.26+** dan **Node.js 20+**.
 ```bash
 # Terminal 1 — backend (http://localhost:8080), dengan akun admin pertama
 cd backend
-ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=ganti-password-ini go run ./cmd/server
+DEMO_ACCOUNTS=true ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=ganti-password-ini go run ./cmd/server
 
 # Terminal 2 — frontend (http://localhost:5173)
 cd frontend
@@ -49,10 +70,16 @@ npm run dev
 Di Windows PowerShell, set env di baris yang sama dengan perintahnya:
 
 ```powershell
-$env:ADMIN_EMAIL="admin@example.com"; $env:ADMIN_PASSWORD="ganti-password-ini"; go run ./cmd/server
+$env:DEMO_ACCOUNTS="true"; $env:ADMIN_EMAIL="admin@example.com"; $env:ADMIN_PASSWORD="ganti-password-ini"; go run ./cmd/server
 ```
 
 Buka **http://localhost:5173**, lalu login dengan email dan password admin di atas, atau buat akun `user` lewat tab *Register*.
+
+**Akun demo (untuk testing):** dengan `DEMO_ACCOUNTS=true`, halaman login menampilkan dua kartu, **Admin** (`admin@demo.local`) dan **User** (`user@demo.local`). Klik kartu untuk mengisi email dan password, lalu tekan *Log in*.
+
+- Password akun demo dibuat **acak setiap server start** dan tidak pernah ditulis di kode. Karena itu akun demo hanya aktif selama server berjalan dengan mode demo; setelah restart, klik kartunya lagi.
+- Tanpa `DEMO_ACCOUNTS=true`, kartu demo tidak muncul sama sekali, dan password akun demo lama tidak bisa diambil dari mana pun.
+- **Jangan aktifkan di server publik:** siapa pun yang bisa membuka halaman login bisa masuk sebagai admin demo.
 
 - Saat start, backend membuat akun admin **hanya jika email tersebut belum terdaftar**. Log menampilkan `admin account created` atau `admin account already exists`.
 - Mengganti `ADMIN_PASSWORD` **tidak** mengubah password admin yang sudah ada. Email yang sudah terdaftar sebagai `user` juga **tidak** dinaikkan menjadi admin.
@@ -72,8 +99,10 @@ Buka **http://localhost:5173**, lalu login dengan email dan password admin di at
 | `ADMIN_EMAIL` | – | Email admin pertama (lihat di atas) |
 | `ADMIN_PASSWORD` | – | Password admin pertama, 8–72 byte. **Jangan di-commit.** |
 | `COOKIE_SECURE` | `false` | Set `true` jika app disajikan lewat HTTPS, supaya cookie session hanya dikirim lewat HTTPS |
-
 | `UPLOAD_DIR` | `./data/uploads` | Folder file foto, satu subfolder per entitas (relatif terhadap folder `backend/`) |
+| `APP_TIMEZONE` | `Asia/Jakarta` | Zona waktu IANA untuk menentukan "hari ini" pada status pemasangan. Nilai yang salah membuat server menolak start. |
+| `SIMULATE_SENSORS` | `true` | Kirim data dummy tiap menit untuk setiap perangkat IoT yang sudah punya metric. Set `false` kalau sudah memakai alat sungguhan. |
+| `DEMO_ACCOUNTS` | `false` | Set `true` untuk menyiapkan akun demo admin + user (password acak per start) dan menampilkan kartunya di halaman login. Hanya untuk testing lokal. |
 
 Untuk mengulang dari data contoh, hentikan backend lalu hapus folder `backend/data/`. Semua akun, session, dan foto ikut terhapus.
 
@@ -103,6 +132,23 @@ cd frontend && npm run typecheck && npm run lint
   - entitas/foto tidak ada (404), header `nosniff` dan cache saat file diambil;
   - hapus foto dan hapus entitas ikut menghapus file di disk; upload yang ditolak tidak meninggalkan file;
   - hak akses belum login / `user` / `admin`.
+- **Pemasangan** (`internal/service/installation_test.go` dengan tanggal tetap, `internal/handler/installation_test.go`):
+  - status di setiap batas: mulai besok → *scheduled*; mulai hari ini / target hari ini → *in_progress*; target kemarin → *overdue* 1 hari; selesai tepat di target atau lebih awal → *on time*; sehari setelah target → *late*;
+  - "hari ini" mengikuti `APP_TIMEZONE` (18.00 UTC tanggal 5 = tanggal 6 di Jakarta);
+  - validasi tanggal: format, tanggal yang tidak ada (`2026-02-30`), urutan, selesai di masa depan;
+  - type tanpa kemampuan → 400, entitas tidak ada → 404, urutan daftar, ganti type menyembunyikan jadwal, hapus entitas ikut menghapus jadwal, hak akses tiap role.
+- **Sensor** (`internal/handler/sensor_test.go`, `internal/validation`, `internal/simulator`):
+  - batas nilai (−50 vs −50.1, 80 vs 80.1), `recorded_at` tepat 5 menit ke depan vs 5 menit 1 detik, tepat 7 hari vs 7 hari 1 detik, format waktu salah;
+  - alur metric → key → kirim data → baca, urutan data, data metric lama disembunyikan setelah metric diganti;
+  - key ditolak dengan pesan yang sama: tanpa key, key salah, key perangkat lain, key yang sudah diganti, cookie login, dan setelah type diganti; body rusak dengan key salah tetap 401;
+  - type bukan IoT (400), entitas tidak ada (404), parameter `hours`, hak akses, hapus entitas ikut menghapus data sensor;
+  - simulator: riwayat 24 jam lalu +1 per tick, semua nilai di dalam rentang, type lain dilewati, data > 7 hari dihapus.
+- **Zona** (`internal/model`, `internal/validation`, `internal/handler/geofence_test.go`):
+  - rumus jarak: 1° lintang = 111 195.08 m, Monas → Bundaran HI ≈ 2.23 km, hasilnya sama dari dua arah;
+  - batas: titik tepat di tepi radius → *inside*, 0.2 m lewat → *outside*;
+  - radius 100 vs 99.9 dan 50 000 vs 50 000.1, NaN, koordinat pusat di batas;
+  - `inside` berubah setelah pin dipindah (PATCH location): masih di dalam di Bundaran HI, di luar di Bandung;
+  - urutan daftar, ganti type menyembunyikan zona, hapus entitas ikut menghapus zona, type lain → 400, entitas tidak ada → 404, hak akses tiap role.
 - **Penyimpanan file** (`internal/storage`): tulis lewat file sementara lalu rename, nama berbahaya (`""`, `..`, `../x`, `a/b`) ditolak tanpa menghapus apa pun.
 - **Database** (`internal/database`): migrasi idempoten, seed hanya saat tabel kosong, constraint koordinat, CHECK role, email unik, hapus user ikut menghapus session, migrasi menambah `last_seen_at` ke tabel `sessions` lama tanpa kehilangan data.
 
@@ -112,7 +158,7 @@ Base path `/api`. Request dan response berformat JSON.
 
 | Method | Path | Deskripsi | Sukses |
 |---|---|---|---|
-| GET | `/api/meta` | Daftar type dan status yang diizinkan | 200 |
+| GET | `/api/meta` | Daftar type, status, dan kemampuan per type (`capabilities`) | 200 |
 | GET | `/api/entities` | List entitas, filter opsional `?type=&status=` | 200 |
 | GET | `/api/entities/{id}` | Detail entitas | 200 |
 | POST | `/api/entities` | Membuat entitas | 201 |
@@ -123,11 +169,26 @@ Base path `/api`. Request dan response berformat JSON.
 | POST | `/api/auth/login` | Login `{email, password}` | 200 |
 | POST | `/api/auth/logout` | Hapus session (tetap 204 walau belum login) | 204 |
 | GET | `/api/auth/me` | User yang sedang login | 200 |
+| GET | `/api/auth/demo-accounts` | Akun demo `[{role, email, password}]` untuk halaman login; publik, list kosong jika `DEMO_ACCOUNTS` tidak aktif | 200 |
 | GET | `/api/admin/stats` | Statistik user untuk dashboard admin | 200 |
 | GET | `/api/entities/{id}/photos` | Daftar foto entitas, terlama dulu | 200 |
 | POST | `/api/entities/{id}/photos` | Upload satu foto (`multipart/form-data`, field `photo`) | 201 |
 | GET | `/api/photos/{photoId}` | File gambar (bukan JSON) | 200 |
 | DELETE | `/api/photos/{photoId}` | Menghapus foto | 204 |
+| GET | `/api/entities/{id}/installation` | Jadwal pemasangan; `{ "data": null }` jika belum diisi | 200 |
+| PUT | `/api/entities/{id}/installation` | Isi/ubah jadwal `{ started_on, target_on, completed_on }` | 200 |
+| DELETE | `/api/entities/{id}/installation` | Hapus jadwal | 204 |
+| GET | `/api/installations` | Semua jadwal (dashboard), paling terlambat dulu | 200 |
+| GET | `/api/entities/{id}/sensor` | Konfigurasi sensor; `{ "data": null }` jika belum ada | 200 |
+| PUT | `/api/entities/{id}/sensor` | Pilih metric `{ "metric" }` | 200 |
+| DELETE | `/api/entities/{id}/sensor` | Hapus sensor + key | 204 |
+| POST | `/api/entities/{id}/sensor/key` | Buat/ganti API key perangkat (ditampilkan sekali) | 201 |
+| GET | `/api/entities/{id}/readings?hours=24` | Data sensor 1–168 jam terakhir, terlama dulu | 200 |
+| POST | `/api/devices/{id}/readings` | **Dipanggil alat**, pakai `Authorization: Bearer <key>` | 201 |
+| GET | `/api/entities/{id}/geofence` | Zona operasional; `{ "data": null }` jika belum ada | 200 |
+| PUT | `/api/entities/{id}/geofence` | Isi/ubah zona `{ center_latitude, center_longitude, radius_m }` | 200 |
+| DELETE | `/api/entities/{id}/geofence` | Hapus zona | 204 |
+| GET | `/api/geofences` | Semua zona (lingkaran di map, dashboard), yang di luar dulu | 200 |
 
 Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak pernah dikirim.
 
@@ -141,6 +202,13 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 | `GET /api/admin/stats` | 401 | 403 | ✅ |
 | `GET .../photos`, `GET /api/photos/{photoId}` | 401 | ✅ | ✅ |
 | `POST .../photos`, `DELETE /api/photos/{photoId}` | 401 | 403 | ✅ |
+| `GET .../installation`, `GET /api/installations` | 401 | ✅ | ✅ |
+| `PUT`, `DELETE .../installation` | 401 | 403 | ✅ |
+| `GET .../sensor`, `GET .../readings` | 401 | ✅ | ✅ |
+| `PUT`, `DELETE .../sensor`, `POST .../sensor/key` | 401 | 403 | ✅ |
+| `POST /api/devices/{id}/readings` | API key perangkat, bukan session | – | – |
+| `GET .../geofence`, `GET /api/geofences` | 401 | ✅ | ✅ |
+| `PUT`, `DELETE .../geofence` | 401 | 403 | ✅ |
 
 **Session:** login dan register memasang cookie `session` (`HttpOnly`, `SameSite=Lax`, berlaku 7 hari). Isinya token acak 32 byte; database hanya menyimpan hash SHA-256 token tersebut, sehingga file DB yang bocor tidak bisa dipakai untuk login.
 
@@ -149,7 +217,9 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 ```json
 { "data": {
     "users": { "total": 12, "by_role": { "user": 10, "admin": 2 },
-               "with_active_session": 5, "online": 2 },
+               "with_active_session": 5, "online": 2,
+               "active_users": [ { "id": "…", "email": "budi@example.com",
+                                   "last_seen_at": "2026-10-06T07:00:00Z", "online": true } ] },
     "online_window_minutes": 5 } }
 ```
 
@@ -157,6 +227,7 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 - Yang dihitung adalah **user**, bukan session: satu user yang login di dua browser dihitung sekali.
 - `by_role` selalu berisi semua role, termasuk yang jumlahnya 0.
 - `with_active_session`: user yang punya session belum kedaluwarsa (belum logout dan belum lewat 7 hari).
+- `active_users`: daftar akun di balik angka itu (hanya role `user`, maksimal 50, yang terakhir aktif paling atas), berisi email, waktu terakhir aktif, dan status online. Endpoint ini khusus admin.
 - `online`: user dengan session aktif yang dipakai dalam `online_window_minutes` terakhir. Setiap request yang sudah login memperbarui `sessions.last_seen_at`, tetapi paling sering sekali per menit, supaya kebanyakan request hanya membaca DB. Selama tab browser terlihat, frontend memanggil `GET /api/auth/me` tiap 2 menit (*heartbeat*), jadi user yang membuka map tapi diam tetap terhitung online.
 - Statistik entitas dihitung di frontend dari `GET /api/entities`, jadi tidak perlu endpoint tambahan.
 
@@ -174,6 +245,74 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 - `GET /api/photos/{id}` mengirim `X-Content-Type-Options: nosniff` (browser tidak menebak tipe lain) dan `Cache-Control: private, max-age=86400` (foto tidak pernah diubah, hanya dihapus).
 - Bentuk objek entitas tidak berubah; foto diambil lewat endpoint sendiri.
 
+**Kemampuan per type & jadwal pemasangan:**
+
+`GET /api/meta` mengirim `"capabilities": { "iot_device": ["installation", "readings"], "facility": ["installation"], "vehicle": ["geofence"] }`. Daftar ini hanya ada di `backend/internal/model/installation.go`, dan frontend menampilkan fitur khusus berdasarkan daftar itu, tanpa menulis nama type sendiri. Perangkat IoT ditambahkan dengan mengubah satu baris di file tersebut.
+
+```json
+{ "data": { "entity_id": "…", "started_on": "2026-09-20", "target_on": "2026-10-01",
+            "completed_on": null, "status": "overdue",
+            "planned_days": 11, "elapsed_days": 16, "days_late": 5,
+            "updated_at": "2026-10-06T08:11:44Z" } }
+```
+
+| Status | Kapan |
+|---|---|
+| `scheduled` | tanggal mulai setelah hari ini |
+| `in_progress` | belum selesai, hari ini ≤ target |
+| `overdue` | belum selesai, hari ini > target |
+| `completed_on_time` | selesai ≤ target |
+| `completed_late` | selesai > target |
+
+- Status dan jumlah hari **dihitung saat diminta**, tidak disimpan, jadi selalu sesuai dengan tanggal hari ini.
+- Tanggal disimpan sebagai `YYYY-MM-DD` tanpa jam. "Hari ini" dihitung di `APP_TIMEZONE` (default `Asia/Jakarta`), supaya status berganti tengah malam WIB, bukan jam 07.00. Data zona waktu disertakan di binary (`time/tzdata`), jadi tetap jalan di Windows.
+- Endpoint jadwal untuk entitas yang type-nya tidak mendukung (misalnya kendaraan) → **400 `invalid_request`**. Kalau type entitas diganti, jadwalnya disimpan tetapi disembunyikan.
+
+**Sensor IoT:**
+
+| Metric | Satuan | Rentang valid |
+|---|---|---|
+| `temperature` | °C | −50 … 80 |
+| `water_level` | cm | 0 … 2000 |
+| `wind_speed` | m/s | 0 … 100 |
+
+Daftar metric (beserta satuan dan rentangnya) hanya ada di `backend/internal/model/sensor.go` dan dikirim lewat `GET /api/meta` sebagai `"metrics"`. Nilai di luar rentang ditolak sebagai data dari alat yang rusak. Satu perangkat mengukur satu metric.
+
+**Menghubungkan alat sungguhan:**
+
+1. Edit perangkat IoT → pilih metric → *Save*.
+2. Edit lagi → *Generate API key* → salin key-nya. Key hanya ditampilkan sekali. Di database cuma disimpan hash SHA-256-nya.
+3. Alat mengirim setiap pengukuran ke endpoint perangkat:
+
+```bash
+curl -X POST http://localhost:5173/api/devices/<entity-id>/readings \
+  -H "Authorization: Bearer gem_…" \
+  -H "Content-Type: application/json" \
+  -d '{"value": 27.5}'
+# opsional: "recorded_at": "2026-10-06T08:00:00Z" (default: waktu diterima)
+```
+
+4. Matikan simulator (`SIMULATE_SENSORS=false`) supaya data dummy tidak bercampur dengan data asli.
+
+- Endpoint perangkat **tidak memakai login user**. Key dicek **sebelum** body dibaca. Key salah, key kosong, key perangkat lain, key yang sudah diganti, atau entitas yang type-nya sudah diganti semuanya mendapat **401** dengan pesan yang sama (`invalid device key`), supaya tidak membocorkan penyebabnya.
+- *Regenerate* membuat key lama langsung tidak berlaku. Respons pembuatan key memakai `Cache-Control: no-store`.
+- `recorded_at` boleh paling jauh 5 menit ke depan (toleransi jam alat) dan paling lama 7 hari ke belakang.
+- **Simulator** berjalan di dalam backend dan mengirim satu nilai per menit untuk setiap perangkat yang sudah punya metric. Datanya lewat **validasi dan service yang sama** dengan endpoint perangkat. Nilainya naik-turun mengikuti pola harian (suhu paling tinggi sore hari). Perangkat yang belum punya data 24 jam terakhir langsung diisi riwayat 24 jam (per 15 menit), supaya grafik tidak kosong.
+- Data sensor disimpan **7 hari**, lalu dihapus otomatis oleh simulator. Kalau metric diganti, data metric lama tidak ditampilkan lagi.
+
+**Zona operasional kendaraan:**
+
+```json
+{ "data": { "entity_id": "…", "center_latitude": -6.175392, "center_longitude": 106.827153,
+            "radius_m": 1000, "distance_m": 4237.7, "inside": false,
+            "updated_at": "2026-10-06T09:32:45Z" } }
+```
+
+- `distance_m` adalah jarak dari pusat zona ke **posisi pin saat ini**, dihitung dengan rumus haversine (jari-jari bumi 6 371 008.8 m). `inside` berarti `distance_m ≤ radius_m`. Keduanya **dihitung saat diminta**, jadi langsung berubah setelah pin di-drag.
+- Keputusan "di dalam atau di luar" hanya ada di **satu fungsi** (`model.ZoneStatus`). Frontend memakai rumus yang sama persis untuk toast saat drag (hasilnya sudah dicocokkan dengan backend sampai 6 angka desimal).
+- Pin di luar zona **tidak ditolak**, cuma ditandai. Alasannya: data harus jujur, dan nanti waktu live tracking dipasang, kendaraan asli memang bisa keluar zona, jadi sistem harus mencatatnya, bukan menolaknya.
+- Radius dan koordinat pusat juga dijaga oleh CHECK di database, bukan hanya oleh validasi aplikasi.
+
 Format response:
 
 ```jsonc
@@ -190,8 +329,8 @@ Format response:
 | Status | Kode | Kapan |
 |---|---|---|
 | 400 | `invalid_json` | Body rusak/kosong, ada field yang tidak dikenal, lebih dari satu objek JSON, atau > 1 MiB |
-| 400 | `invalid_request` | Upload foto: body bukan `multipart/form-data`, field selain `photo`, atau lebih dari satu foto |
-| 401 | `unauthorized` | Belum login, atau session tidak valid / kedaluwarsa |
+| 400 | `invalid_request` | Upload foto: body bukan `multipart/form-data`, field selain `photo`, atau lebih dari satu foto. Fitur khusus (jadwal, sensor, zona) untuk type yang tidak mendukungnya. Key dibuat sebelum metric dipilih. |
+| 401 | `unauthorized` | Belum login, session tidak valid / kedaluwarsa, atau API key perangkat salah |
 | 401 | `invalid_credentials` | Email atau password salah (pesan sama untuk keduanya, supaya tidak membocorkan email yang terdaftar) |
 | 403 | `forbidden` | Sudah login, tapi bukan admin |
 | 404 | `not_found` | Entitas tidak ada, ID bukan UUID, atau route tidak ada |
@@ -221,6 +360,12 @@ Keputusan tambahan yang tidak diatur di brief awal (disetujui developer):
 | `longitude` | wajib, −180 … 180, bukan NaN/Inf |
 | `description` | opsional, di-trim, maks. 500 karakter |
 | `attributes` | opsional, harus **objek** JSON (`null` = kosong). Di form diisi sebagai baris nama → nilai; nama wajib dan tidak boleh dobel |
+
+**Zona operasional:** `center_latitude`/`center_longitude` wajib dengan aturan yang sama seperti koordinat entitas; `radius_m` wajib, angka, 100–50 000 meter.
+
+**Data sensor (dari alat):** `value` wajib, berupa angka, dan di dalam rentang metric; `recorded_at` opsional, RFC3339, paling jauh 5 menit ke depan dan paling lama 7 hari ke belakang.
+
+**Jadwal pemasangan:** `started_on` dan `target_on` wajib, format `YYYY-MM-DD` persis dan tanggalnya benar-benar ada; `target_on` ≥ `started_on`; `completed_on` opsional, ≥ `started_on`, dan tidak boleh setelah hari ini.
 | `created_at`, `updated_at` | RFC3339 UTC (presisi detik), diisi backend |
 
 **User:**
@@ -246,18 +391,35 @@ backend/
   internal/repository/     query SQL berparameter (entities, users, sessions)
   internal/database/       koneksi, migrasi (termasuk penambahan kolom untuk DB lama), seed
   internal/storage/        file foto di disk (satu folder per entitas, nama selalu dicek)
+  internal/simulator/      data sensor dummy + pembersihan data lama
 frontend/src/
   api/                     fetch client (ApiError) + fungsi API yang typed
   components/              AppBar (tab Map | Dashboard), ConfirmDialog, toast, style form bersama
   features/auth/           halaman login/register, hooks user saat ini + heartbeat
   features/dashboard/      ringkasan entitas, statistik user admin
   features/photos/         galeri view-only, tampilan foto besar, pemilih foto di form (draft)
+  features/installations/  bagian Installation di form, ringkasan status di panel detail, label/warna status
+  features/sensors/        bagian Sensor di form, panel API key, nilai terakhir + grafik 24 jam (SVG)
+  features/geofences/      bagian Operating zone di form, "Pick on map" + pratinjau (context ZoneEditor), status zona, rumus jarak
+  i18n/                    kamus en (acuan) + id, provider, penerjemah label nilai dan pesan error backend
   features/entities/       map, marker, form, panel detail, hooks React Query, helper geo
   schemas/                 schema zod (mengikuti aturan backend)
   types/                   tipe bersama
 ```
 
 Layering backend: `handler → service → repository`. Handler tidak menjalankan SQL, dan repository tidak tahu soal HTTP.
+
+## Bahasa (ID | EN)
+
+Terjemahan **sepenuhnya di frontend dan tanpa library**. Backend dan kontrak API tidak berubah, dan semua pesan API tetap dalam bahasa Inggris.
+
+- `frontend/src/i18n/en.ts` adalah kamus acuan. `id.ts` bertipe `Messages = typeof en`, jadi **key yang hilang atau salah tulis langsung jadi error TypeScript**. Teks yang berisi nilai berbentuk fungsi (misalnya `entityCount: (n) => …`), sehingga kedua bahasa menerima parameter yang sama dan bisa mengatur bentuk jamak sendiri.
+- Komponen mengambil teks lewat `useI18n()`: `t` (kamus), `value()` (label type/status/role/metric/status pemasangan), `fieldError()`, `sentence()`, `errorText()`, dan `locale` (`en-US` / `id-ID`) untuk tanggal dan angka.
+- **Pesan dari backend dan zod** berupa fragmen bahasa Inggris (`"must be between -90 and 90"`). Fragmen ini **disimpan apa adanya** dan baru diterjemahkan saat ditampilkan, lewat tabel pola di `i18n/translate.ts` (`Lintang harus di antara -90 dan 90`). Setiap pesan error yang ada di kode backend sudah dicek masuk tabel. Pesan yang tidak dikenal ditampilkan apa adanya dalam bahasa Inggris, jadi error tidak pernah hilang.
+- Nilai baru dari backend (misalnya type baru) yang belum ada di kamus tetap tampil dengan label cadangan (`rocket_ship` → "Rocket Ship"), atau memakai label yang dikirim backend (untuk metric).
+- Pilihan bahasa disimpan di `localStorage` (dibungkus try/catch). Kalau storage tidak tersedia, tombolnya tetap bekerja selama halaman terbuka. `<html lang>` ikut diganti.
+
+**Menambah teks:** tambahkan key di `en.ts`, lalu typecheck akan menunjukkan bahwa `id.ts` juga harus diisi. **Menambah bahasa:** buat file baru bertipe `Messages`, tambahkan tabel pola di `translate.ts`, lalu daftarkan di provider dan `LanguageSwitch`.
 
 ## Alasan Pemilihan Library
 
@@ -285,7 +447,7 @@ Layering backend: `handler → service → repository`. Handler tidak menjalanka
 | `react-hook-form` + `zod` + `@hookform/resolvers` | Form performan dengan error per field. Schema zod dibangun dari `/api/meta` dan mengikuti aturan backend. |
 | Tailwind CSS | Styling cepat dan konsisten tanpa file CSS terpisah per komponen |
 
-Dialog konfirmasi, toast, halaman login, dan bar di dashboard dibuat sendiri (elemen `<dialog>` bawaan browser + context React + react-hook-form + `div` dengan Tailwind) supaya **tidak menambah dependency**. Library chart tidak diperlukan untuk beberapa bar horizontal. Upload foto memakai `multipart` dan `http.DetectContentType` dari stdlib Go, dan `FormData` + `<input type="file">` bawaan browser. Tidak ada router: halaman login tampil saat belum login, dan tab Map | Dashboard cukup berupa state biasa.
+Dialog konfirmasi, toast, halaman login, dan bar di dashboard dibuat sendiri (elemen `<dialog>` bawaan browser + context React + react-hook-form + `div` dengan Tailwind) supaya **tidak menambah dependency**. Library chart tidak diperlukan untuk beberapa bar horizontal. Upload foto memakai `multipart` dan `http.DetectContentType` dari stdlib Go, dan `FormData` + `<input type="file">` bawaan browser. Grafik sensor adalah satu garis SVG yang digambar sendiri, sedangkan simulator dan API key memakai `math/rand/v2`, `crypto/rand`, dan `crypto/sha256` dari stdlib, jadi tidak ada library chart maupun IoT. Lingkaran zona memakai `<Circle>` dari `react-leaflet` yang sudah dipakai, dan rumus jarak ditulis sendiri (beberapa baris haversine), bukan library geospasial. Tidak ada router: halaman login tampil saat belum login, dan tab Map | Dashboard cukup berupa state biasa.
 
 ## Workflow AI
 
@@ -312,21 +474,27 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
    - upload foto dipindah dari panel detail ke form *New/Edit entity*, dan saya memilih perubahan foto ikut diproses saat *Save* (bukan langsung), supaya *Cancel* tetap membatalkan semuanya;
    - kolom attributes yang awalnya berupa JSON mentah saya minta diganti dengan baris nama → nilai, karena JSON mudah salah ketik bagi user biasa;
    - saya juga menemukan kolom nilai yang "kegepeng" di editor attributes, lalu diperbaiki.
+10. **Jadwal pemasangan.** Saya meminta fitur durasi pemasangan untuk mengontrol kualitas pemasangan fasilitas. Saya menyetujui tanggal tanpa jam, status yang dihitung server, dan zona waktu Jakarta. Setelah fiturnya jadi, saya memutuskan perangkat IoT juga perlu jadwal pemasangan. Karena fitur khusus per type sejak awal dirancang lewat `capabilities` di `/api/meta`, perubahan itu cukup satu baris di backend, dan UI langsung mengikuti.
+11. **Sensor IoT.** Saya ingin app ini siap dihubungkan ke alat sungguhan (perekam suhu, ketinggian air, kecepatan angin), tapi untuk sekarang memakai data dummy. Saya memilih simulator di dalam backend, satu metric per perangkat, data disimpan 7 hari, dan kiriman tiap menit. Syarat yang saya pegang: data dummy harus lewat jalur validasi yang sama dengan alat asli, supaya waktu alat sungguhan dipasang tidak ada kode yang perlu diubah. Saya mengetes alurnya langsung, termasuk mengirim data dengan `curl` memakai key dari UI dan memastikan key lama ditolak setelah *Regenerate*.
+12. **Zona operasional sebelum live tracking.** Sebelum membangun live tracking, saya mengusulkan alternatif: kendaraan punya zona radius tempat ia boleh dipakai. Setelah membandingkan ukuran pekerjaan dan risikonya, saya memutuskan membuat zona dulu, karena zona juga menjadi dasar live tracking nanti. Keputusan yang saya ambil: bentuk lingkaran, pin di luar zona hanya ditandai (bukan ditolak), titik pusat bisa dipilih di map, dan radius 100 m – 50 km. Waktu pengecekan, AI menemukan bahwa zod v4 menolak `NaN` dari input angka yang dikosongkan, yang bisa memblokir Save walaupun zona dimatikan, lalu memperbaikinya sebelum saya mengetes.
+13. **Pilihan bahasa.** Saya meminta UI tersedia dalam Bahasa Indonesia dan English. Keputusan yang saya setujui: tanpa library, backend tidak diubah, dan nama type/status ikut diterjemahkan dengan label cadangan untuk nilai baru. Supaya tidak ada pesan yang terlewat, AI mengumpulkan semua pesan error langsung dari kode backend dan mengecek bahwa masing-masing punya terjemahan.
 
 ## Fitur yang Belum Selesai & Keterbatasan
 
 **Belum dikerjakan (nice to have):**
 
-- Filter type/status di UI. Backend dan hook `useEntities(filter)` sudah mendukung, tinggal komponen UI-nya.
+- Filter berdasarkan **type** di UI (pencarian nama dan filter status sudah ada). Pencarian dilakukan di frontend dari list yang sudah dimuat; untuk data sangat besar perlu pencarian di backend.
 - Sidebar daftar entitas yang tersinkron dengan map.
 - Clustering marker (butuh dependency tambahan).
 - Update realtime (SSE/WebSocket). Saat ini perubahan dari tab atau user lain baru terlihat saat refetch (misalnya saat window kembali difokus).
 - **Lupa password / ganti password.**
 - **Kelola user** (daftar user, menaikkan user menjadi admin, menghapus akun). Admin tambahan saat ini hanya bisa dibuat lewat `ADMIN_EMAIL`/`ADMIN_PASSWORD` dengan email baru.
-- Daftar nama user yang sedang online, serta grafik/riwayat aktivitas di dashboard.
+- Grafik/riwayat aktivitas user di dashboard.
 - Untuk foto: resize/thumbnail otomatis, crop, mengatur urutan foto, dan keterangan (caption) per foto.
-- Direncanakan (urutan sudah disepakati): durasi pemasangan fasilitas → data sensor IoT (endpoint perangkat + API key, data dummy) → live tracking kendaraan (simulator + SSE). Pilihan bahasa Indonesia/English juga ditunda.
-- **Rate limiting login.** Belum ada pembatasan percobaan login berulang.
+- Untuk jadwal pemasangan: riwayat perubahan tanggal, tahapan/milestone, penanggung jawab/kontraktor, dan notifikasi saat terlambat.
+- Untuk sensor: beberapa metric per perangkat, ambang batas/alarm dan notifikasi, kalibrasi, MQTT atau protokol IoT lain, dan rate limiting endpoint perangkat.
+- Untuk zona: zona poligon, beberapa zona per kendaraan, zona per jam/hari, riwayat keluar-masuk zona, dan notifikasi.
+- Direncanakan (ditunda): **live tracking kendaraan** (simulator rute + SSE), yang akan memakai `model.ZoneStatus` untuk mencatat saat kendaraan keluar zona.- **Rate limiting login.** Belum ada pembatasan percobaan login berulang.
 
 **Keterbatasan yang diketahui:**
 
@@ -344,6 +512,14 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
 - **Isi foto hanya dicek dari tanda tangan awal file** (seperti `http.DetectContentType`), bukan di-decode penuh. File dengan header gambar yang benar tapi isinya rusak tetap diterima; browser hanya gagal menampilkannya.
 - **File foto dan baris DB tidak dalam satu transaksi.** Kalau server mati tepat di antara menyimpan file dan menulis ke DB, bisa tersisa file yatim di `UPLOAD_DIR` (tidak terlihat di app, hanya memakan ruang disk).
 - **Perubahan foto di form diproses setelah entitas tersimpan.** Kalau upload sebagian gagal, entitas tetap tersimpan dan muncul toast berisi jumlah yang gagal; foto yang gagal perlu ditambahkan ulang.
+- **Validasi "tidak boleh di masa depan" di frontend memakai tanggal browser**, sedangkan backend memakai `APP_TIMEZONE`. Kalau zona waktu browser berbeda jauh, frontend bisa lolos tapi backend menolak (atau sebaliknya). Backend tetap jadi penentu, dan entitasnya tetap tersimpan dengan toast berisi error jadwal.
+- **Bahasa:** hanya ID dan EN. Pesan error yang sedang tampil di form login tidak berganti bahasa sampai form disubmit lagi (pesan field lainnya langsung berganti). Pesan baru dari backend yang belum masuk tabel pola akan tampil dalam bahasa Inggris. Tidak ada terjemahan dari sisi server (`Accept-Language`).
+- **Status zona memakai posisi pin di map**, bukan GPS. Selama belum ada live tracking, "di luar zona" berarti admin meletakkan pin di luar zona, bukan kendaraan yang benar-benar keluar.
+- **Jarak dihitung dengan bola sempurna (haversine)**, selisihnya bisa sampai ±0.5% dibanding perhitungan elipsoid. Untuk radius 100 m – 50 km itu paling banyak sekitar ±250 m di tepi zona terbesar.
+- **Endpoint perangkat belum dibatasi kecepatannya (rate limiting).** Alat dengan key yang benar bisa mengirim data sebanyak apa pun. Datanya tetap tervalidasi dan otomatis terhapus setelah 7 hari.
+- **Simulator dan alat asli bisa bercampur** kalau `SIMULATE_SENSORS` tidak dimatikan: simulator tetap mengirim satu nilai per menit untuk setiap perangkat yang punya metric.
+- **Grafik menampilkan semua titik 24 jam** (±1.440 titik per perangkat dari simulator) tanpa diringkas. Masih ringan untuk satu perangkat, tapi perlu agregasi kalau rentang waktunya diperpanjang.
+- **Nama tabel `facility_installations`** tetap dipakai walaupun sekarang juga untuk perangkat IoT, supaya tidak perlu migrasi ganti nama.
 - **Angka di attributes:** teks yang persis seperti angka (misalnya `1234`) selalu disimpan sebagai angka. Untuk memaksa disimpan sebagai teks, perlu mode JSON.
 - Backend tidak menyajikan file hasil build frontend dan tidak mengatur CORS. Untuk produksi, keduanya perlu disajikan dari origin yang sama (reverse proxy) atau CORS perlu ditambahkan.
 - **Tile OpenStreetMap** tunduk pada [Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/) dan tidak ditujukan untuk trafik produksi tinggi. Untuk produksi, gunakan penyedia tile berbayar atau host tile sendiri.

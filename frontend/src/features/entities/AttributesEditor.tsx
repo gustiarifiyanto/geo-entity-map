@@ -1,4 +1,5 @@
 import { inputClass } from '../../components/formStyles'
+import { useI18n } from '../../i18n/context'
 import type { AttributeRow, AttributesValue } from '../../schemas/attributes'
 
 /** Field errors for the attributes value, shaped like the value itself. */
@@ -22,6 +23,7 @@ const smallInput = `${inputClass} py-1.5 text-xs`
  * back to a JSON textarea so it is never lost.
  */
 export function AttributesEditor({ value, onChange, errors }: AttributesEditorProps) {
+  const { t, fieldError, sentence } = useI18n()
   if (value.mode === 'json') {
     const error = errors?.text?.message ?? errors?.message
     return (
@@ -37,11 +39,11 @@ export function AttributesEditor({ value, onChange, errors }: AttributesEditorPr
           className={`${inputClass} font-mono text-xs`}
         />
         <p id="attributes-hint" className="mt-1 text-xs text-gray-500">
-          These attributes contain nested data, so they are edited as JSON.
+          {t.attributes.jsonHint}
         </p>
         {error && (
           <p className="mt-1 text-xs text-red-600" role="alert">
-            Attributes {error}
+            {fieldError(t.form.attributes, error)}
           </p>
         )}
       </div>
@@ -66,8 +68,8 @@ export function AttributesEditor({ value, onChange, errors }: AttributesEditorPr
                     type="text"
                     value={row.key}
                     onChange={(event) => setRow(i, { key: event.target.value })}
-                    placeholder="Name, e.g. plate"
-                    aria-label={`Attribute ${i + 1} name`}
+                    placeholder={t.attributes.namePlaceholder}
+                    aria-label={t.attributes.nameLabel(i + 1)}
                     aria-invalid={keyError ? true : undefined}
                     autoComplete="off"
                     className={smallInput}
@@ -76,16 +78,16 @@ export function AttributesEditor({ value, onChange, errors }: AttributesEditorPr
                     type="text"
                     value={row.value}
                     onChange={(event) => setRow(i, { value: event.target.value })}
-                    placeholder="Value, e.g. B 1234 XYZ"
-                    aria-label={`Attribute ${i + 1} value`}
+                    placeholder={t.attributes.valuePlaceholder}
+                    aria-label={t.attributes.valueLabel(i + 1)}
                     autoComplete="off"
                     className={smallInput}
                   />
                   <button
                     type="button"
                     onClick={() => update(rows.filter((_, j) => j !== i))}
-                    aria-label={`Remove attribute ${i + 1}`}
-                    title="Remove"
+                    aria-label={t.attributes.remove(i + 1)}
+                    title={t.attributes.removeShort}
                     className="mt-1 rounded-md p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
                   >
                     <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
@@ -95,7 +97,7 @@ export function AttributesEditor({ value, onChange, errors }: AttributesEditorPr
                 </div>
                 {keyError && (
                   <p className="mt-1 text-xs text-red-600" role="alert">
-                    {keyError}
+                    {sentence(keyError)}
                   </p>
                 )}
               </li>
@@ -108,14 +110,14 @@ export function AttributesEditor({ value, onChange, errors }: AttributesEditorPr
         onClick={() => update([...rows, { key: '', value: '' }])}
         className={`${rows.length > 0 ? 'mt-2' : ''} text-xs font-medium text-gray-600 transition-colors hover:text-gray-900`}
       >
-        + Add attribute
+        {t.attributes.add}
       </button>
       <p className="mt-1 text-xs text-gray-500">
-        Extra properties. Numbers and true/false are saved as such; anything else as text.
+        {t.attributes.hint}
       </p>
       {errors?.message && (
         <p className="mt-1 text-xs text-red-600" role="alert">
-          Attributes {errors.message}
+          {fieldError(t.form.attributes, errors.message)}
         </p>
       )}
     </div>

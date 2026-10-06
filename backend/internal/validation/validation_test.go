@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/model"
 )
@@ -309,4 +310,159 @@ func emailOfLength(n int) string {
 	b, c := strings.Repeat("b", 63), strings.Repeat("c", 63)
 	fixed := len(local) + len("@") + len(b) + len(".") + len(c) + len(".") + len(".com")
 	return local + "@" + b + "." + c + "." + strings.Repeat("d", n-fixed) + ".com"
+}
+
+func strPtr(s string) *string { return &s }
+
+func TestInstallation(t *testing.T) {
+	today := time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		in   model.InstallationInput
+		want FieldErrors
+	}{
+		{"valid, not completed", model.InstallationInput{StartedOn: "2026-10-01", TargetOn: "2026-10-20"}, nil},
+		{"valid, completed today", model.InstallationInput{StartedOn: "2026-10-01", TargetOn: "2026-10-20", CompletedOn: strPtr("2026-10-06")}, nil},
+		{"same day start, target and completion", model.InstallationInput{StartedOn: "2026-10-06", TargetOn: "2026-10-06", CompletedOn: strPtr("2026-10-06")}, nil},
+		{"start in the future is allowed", model.InstallationInput{StartedOn: "2026-12-01", TargetOn: "2026-12-31"}, nil},
+		{"empty completion means not completed", model.InstallationInput{StartedOn: "2026-10-01", TargetOn: "2026-10-20", CompletedOn: strPtr("  ")}, nil},
+		{"dates are trimmed", model.InstallationInput{StartedOn: " 2026-10-01 ", TargetOn: "2026-10-20 "}, nil},
+		{"both missing", model.InstallationInput{}, FieldErrors{
+			"started_on": "is required",
+			"target_on":  "is required",
+		}},
+		{"bad formats", model.InstallationInput{StartedOn: "01-10-2026", TargetOn: "2026-1-5", CompletedOn: strPtr("2026-10-06T00:00:00Z")}, FieldErrors{
+			"started_on":   "must be a date (YYYY-MM-DD)",
+			"target_on":    "must be a date (YYYY-MM-DD)",
+			"completed_on": "must be a date (YYYY-MM-DD)",
+		}},
+		{"day that does not exist", model.InstallationInput{StartedOn: "2026-02-30", TargetOn: "2026-10-20"}, FieldErrors{
+			"started_on": "must be a date (YYYY-MM-DD)",
+		}},
+		{"target before start", model.InstallationInput{StartedOn: "2026-10-10", TargetOn: "2026-10-09"}, FieldErrors{
+			"target_on": "must be on or after the start date",
+		}},
+		{"completed before start", model.InstallationInput{StartedOn: "2026-10-03", TargetOn: "2026-10-20", CompletedOn: strPtr("2026-10-02")}, FieldErrors{
+			"completed_on": "must be on or after the start date",
+		}},
+		{"completed tomorrow", model.InstallationInput{StartedOn: "2026-10-01", TargetOn: "2026-10-20", CompletedOn: strPtr("2026-10-07")}, FieldErrors{
+			"completed_on": "cannot be in the future",
+		}},
+	}
+
+	v := newValidator(t)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := v.Installation(&tc.in, today)
+			if err != nil {
+				t.Fatalf("Installation: unexpected error: %v", err)
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("Installation() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSensor(t *testing.T) {
+	v := newValidator(t)
+	for _, m := range model.Metrics {
+		in := model.SensorInput{Metric: m.ID}
+		if got, err := v.Sensor(&in); err != nil || got != nil {
+			t.Errorf("Sensor(%q) = %v, %v; want valid", m.ID, got, err)
+		}
+	}
+	in := model.SensorInput{Metric: " temperature "}
+	if got, _ := v.Sensor(&in); got != nil || in.Metric != model.MetricTemperature {
+		t.Errorf("trimmed metric: got %v, metric %q", got, in.Metric)
+	}
+	for _, bad := range []model.Metric{"", "humidity", "Temperature"} {
+		in := model.SensorInput{Metric: bad}
+		got, err := v.Sensor(&in)
+		if err != nil || got["metric"] == "" {
+			t.Errorf("Sensor(%q) = %v, %v; want a metric error", bad, got, err)
+		}
+	}
+}
+
+func TestReading(t *testing.T) {
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	spec, _ := model.MetricTemperature.Spec()
+	at := func(d time.Duration) *string { s := now.Add(d).Format(time.RFC3339); return &s }
+	tests := []struct {
+		name string
+		in   model.ReadingInput
+		want FieldErrors
+	}{
+		{"valid", model.ReadingInput{Value: ptr(27.5)}, nil},
+		{"lowest value", model.ReadingInput{Value: ptr(-50)}, nil},
+		{"highest value", model.ReadingInput{Value: ptr(80)}, nil},
+		{"zero", model.ReadingInput{Value: ptr(0)}, nil},
+		{"just below range", model.ReadingInput{Value: ptr(-50.1)}, FieldErrors{"value": "must be between -50 and 80"}},
+		{"just above range", model.ReadingInput{Value: ptr(80.1)}, FieldErrors{"value": "must be between -50 and 80"}},
+		{"missing value", model.ReadingInput{}, FieldErrors{"value": "is required"}},
+		{"recorded now", model.ReadingInput{Value: ptr(1), RecordedAt: at(0)}, nil},
+		{"recorded 5 min ahead", model.ReadingInput{Value: ptr(1), RecordedAt: at(5 * time.Minute)}, nil},
+		{"recorded 5 min 1 s ahead", model.ReadingInput{Value: ptr(1), RecordedAt: at(5*time.Minute + time.Second)},
+			FieldErrors{"recorded_at": "cannot be in the future"}},
+		{"recorded 7 days ago", model.ReadingInput{Value: ptr(1), RecordedAt: at(-7 * 24 * time.Hour)}, nil},
+		{"recorded 7 days 1 s ago", model.ReadingInput{Value: ptr(1), RecordedAt: at(-7*24*time.Hour - time.Second)},
+			FieldErrors{"recorded_at": "cannot be older than 7 days"}},
+		{"recorded_at with offset", model.ReadingInput{Value: ptr(1), RecordedAt: strPtr("2026-10-06T18:30:00+07:00")}, nil},
+		{"recorded_at not RFC3339", model.ReadingInput{Value: ptr(1), RecordedAt: strPtr("2026-10-06 12:00")},
+			FieldErrors{"recorded_at": "must be a date-time (RFC3339, e.g. 2026-10-06T08:00:00Z)"}},
+	}
+
+	v := newValidator(t)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := v.Reading(&tc.in, spec, now)
+			if err != nil {
+				t.Fatalf("Reading: unexpected error: %v", err)
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("Reading() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGeofence(t *testing.T) {
+	zone := func(lat, lng, r *float64) model.GeofenceInput {
+		return model.GeofenceInput{CenterLatitude: lat, CenterLongitude: lng, RadiusM: r}
+	}
+	tests := []struct {
+		name string
+		in   model.GeofenceInput
+		want FieldErrors
+	}{
+		{"valid", zone(ptr(-6.2), ptr(106.8), ptr(5000)), nil},
+		{"smallest radius", zone(ptr(0), ptr(0), ptr(100)), nil},
+		{"largest radius", zone(ptr(0), ptr(0), ptr(50_000)), nil},
+		{"center on the boundaries", zone(ptr(90), ptr(-180), ptr(1000)), nil},
+		{"radius 99.9", zone(ptr(0), ptr(0), ptr(99.9)), FieldErrors{"radius_m": "must be between 100 and 50000"}},
+		{"radius 50000.1", zone(ptr(0), ptr(0), ptr(50_000.1)), FieldErrors{"radius_m": "must be between 100 and 50000"}},
+		{"radius NaN", zone(ptr(0), ptr(0), ptr(math.NaN())), FieldErrors{"radius_m": "must be between 100 and 50000"}},
+		{"center out of range", zone(ptr(90.0001), ptr(180.0001), ptr(1000)), FieldErrors{
+			"center_latitude":  "must be between -90 and 90",
+			"center_longitude": "must be between -180 and 180",
+		}},
+		{"all missing", model.GeofenceInput{}, FieldErrors{
+			"center_latitude":  "is required",
+			"center_longitude": "is required",
+			"radius_m":         "is required",
+		}},
+	}
+	v := newValidator(t)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := v.Geofence(&tc.in)
+			if err != nil {
+				t.Fatalf("Geofence: unexpected error: %v", err)
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("Geofence() = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }

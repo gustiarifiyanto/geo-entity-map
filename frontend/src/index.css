@@ -73,3 +73,9 @@ body,
     animation: fade-in 160ms ease-out;
   }
 }
+
+/* While a zone center is being picked, the map shows a crosshair. */
+.picking-zone,
+.picking-zone .leaflet-interactive {
+  cursor: crosshair;
+}

@@ -52,6 +52,16 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusNotFound, "not_found", "photo not found")
 		return
 	}
+	for _, badRequest := range []error{model.ErrNoInstallation, model.ErrNoReadings, model.ErrNoGeofence, model.ErrNoSensorMetric} {
+		if errors.Is(err, badRequest) {
+			writeError(w, http.StatusBadRequest, "invalid_request", badRequest.Error())
+			return
+		}
+	}
+	if errors.Is(err, model.ErrInvalidDeviceKey) {
+		writeError(w, http.StatusUnauthorized, "unauthorized", model.ErrInvalidDeviceKey.Error())
+		return
+	}
 	slog.Error("internal error", "error", err, "method", r.Method, "path", r.URL.Path)
 	writeError(w, http.StatusInternalServerError, "internal_error", "an unexpected error occurred")
 }

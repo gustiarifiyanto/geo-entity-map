@@ -55,6 +55,46 @@ CREATE TABLE IF NOT EXISTS entity_photos (
 	created_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_entity_photos_entity_id ON entity_photos (entity_id);
+
+-- Installation schedule of facilities. Dates are calendar days (YYYY-MM-DD);
+-- the status is computed from them, never stored.
+CREATE TABLE IF NOT EXISTS facility_installations (
+	entity_id    TEXT PRIMARY KEY REFERENCES entities (id) ON DELETE CASCADE,
+	started_on   TEXT NOT NULL,
+	target_on    TEXT NOT NULL,
+	completed_on TEXT,
+	updated_at   TEXT NOT NULL
+);
+
+-- One sensor per IoT device. api_key_hash is the SHA-256 of the device key,
+-- so a leaked database file cannot be used to send readings.
+CREATE TABLE IF NOT EXISTS sensor_configs (
+	entity_id      TEXT PRIMARY KEY REFERENCES entities (id) ON DELETE CASCADE,
+	metric         TEXT NOT NULL,
+	api_key_hash   TEXT UNIQUE,
+	key_created_at TEXT,
+	updated_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sensor_readings (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	entity_id   TEXT NOT NULL REFERENCES entities (id) ON DELETE CASCADE,
+	metric      TEXT NOT NULL,
+	value       REAL NOT NULL,
+	recorded_at TEXT NOT NULL,
+	received_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sensor_readings_entity_time ON sensor_readings (entity_id, recorded_at);
+
+-- Operating zone (circle) of an entity. Whether the entity is inside is
+-- computed from its current position, never stored.
+CREATE TABLE IF NOT EXISTS geofences (
+	entity_id        TEXT PRIMARY KEY REFERENCES entities (id) ON DELETE CASCADE,
+	center_latitude  REAL NOT NULL CHECK (center_latitude BETWEEN -90 AND 90),
+	center_longitude REAL NOT NULL CHECK (center_longitude BETWEEN -180 AND 180),
+	radius_m         REAL NOT NULL CHECK (radius_m BETWEEN 100 AND 50000),
+	updated_at       TEXT NOT NULL
+);
 `
 
 // Migrate creates the schema if it does not exist and adds columns that

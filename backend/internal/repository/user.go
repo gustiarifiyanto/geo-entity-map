@@ -142,7 +142,55 @@ func (r *UserRepository) UserStats(ctx context.Context, role model.Role, now, on
 	if err := rows.Err(); err != nil {
 		return model.UserStats{}, fmt.Errorf("iterate role counts: %w", err)
 	}
+
+	if stats.ActiveUsers, err = r.activeUsers(ctx, role, now, onlineSince); err != nil {
+		return model.UserStats{}, err
+	}
 	return stats, nil
+}
+
+// activeUsers lists users of the given role with an unexpired session, most
+// recently seen first (never-seen sessions last), capped at MaxActiveUsersListed.
+func (r *UserRepository) activeUsers(ctx context.Context, role model.Role, now, onlineSince time.Time) ([]model.ActiveUser, error) {
+	// In SQLite NULL sorts lowest, so DESC puts users never seen last.
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT u.id, u.email, MAX(s.last_seen_at) AS last_seen
+		FROM sessions s JOIN users u ON u.id = s.user_id
+		WHERE u.role = ? AND s.expires_at > ?
+		GROUP BY u.id, u.email
+		ORDER BY last_seen DESC, u.email
+		LIMIT ?`,
+		role, formatTime(now), model.MaxActiveUsersListed)
+	if err != nil {
+		return nil, fmt.Errorf("query active users: %w", err)
+	}
+	defer rows.Close()
+
+	since := formatTime(onlineSince)
+	users := make([]model.ActiveUser, 0)
+	for rows.Next() {
+		var (
+			u        model.ActiveUser
+			lastSeen sql.NullString
+		)
+		if err := rows.Scan(&u.ID, &u.Email, &lastSeen); err != nil {
+			return nil, fmt.Errorf("scan active user: %w", err)
+		}
+		if lastSeen.Valid {
+			t, err := time.Parse(time.RFC3339, lastSeen.String)
+			if err != nil {
+				return nil, fmt.Errorf("parse last_seen_at of user %s: %w", u.ID, err)
+			}
+			u.LastSeenAt = &t
+			// Same rule as the online count: seen at or after onlineSince.
+			u.Online = lastSeen.String >= since
+		}
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active users: %w", err)
+	}
+	return users, nil
 }
 
 // DeleteSession removes a session. Deleting an unknown session is not an error.
@@ -178,4 +226,18 @@ func scanUser(s scanner) (model.User, error) {
 		return model.User{}, fmt.Errorf("parse created_at of user %s: %w", u.ID, err)
 	}
 	return u, nil
+}
+
+// UpdatePasswordHash replaces the password hash of the user with id.
+func (r *UserRepository) UpdatePasswordHash(ctx context.Context, id, hash string) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, hash, id)
+	if err != nil {
+		return fmt.Errorf("update password hash: %w", err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return fmt.Errorf("update password hash: %w", err)
+	} else if n == 0 {
+		return model.ErrUserNotFound
+	}
+	return nil
 }

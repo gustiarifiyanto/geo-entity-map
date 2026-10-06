@@ -1,6 +1,12 @@
 import { z } from 'zod'
 import type { Entity, Meta } from '../types/entity'
 import { attributesSchema, toAttributesValue } from './attributes'
+import { emptyInstallationValue, installationSchema, toInstallationValue } from './installation'
+import type { Installation, InstallationInput } from '../types/installation'
+import type { SensorConfig } from '../types/sensor'
+import { CAP_GEOFENCE, CAP_INSTALLATION, CAP_READINGS, hasCapability } from './capabilities'
+import { geofenceSchema, numberOrNaN, toGeofenceValue } from './geofence'
+import type { Geofence, GeofenceInput } from '../types/geofence'
 
 // Mirrors the backend rules in backend/internal/validation. Messages match the
 // backend so client and server errors read the same.
@@ -57,13 +63,82 @@ export function createEntityFormSchema(meta: Meta) {
       .trim()
       .refine(...maxChars(DESCRIPTION_MAX)),
     attributes,
+    // Raw here; validated below only when the chosen type has the capability,
+    // so hidden fields of another type can never block saving.
+    installation: z.object({
+      enabled: z.boolean(),
+      started_on: z.string(),
+      target_on: z.string(),
+      completed_on: z.string(),
+    }),
+    sensor: z.object({ metric: z.string() }),
+    geofence: z.object({
+      enabled: z.boolean(),
+      center_latitude: numberOrNaN,
+      center_longitude: numberOrNaN,
+      radius_m: numberOrNaN,
+    }),
   })
+    .transform(({ installation, sensor, geofence, ...entity }, ctx) => {
+      const extras: EntityExtras = { installation: null, sensorMetric: null, geofence: null }
+
+      if (hasCapability(meta, entity.type, CAP_INSTALLATION)) {
+        const result = installationSchema.safeParse(installation)
+        if (result.success) {
+          extras.installation = result.data
+        } else {
+          for (const issue of result.error.issues) {
+            ctx.addIssue({ code: 'custom', path: ['installation', ...issue.path], message: issue.message })
+          }
+        }
+      }
+
+      if (hasCapability(meta, entity.type, CAP_READINGS)) {
+        const metric = sensor.metric.trim()
+        // An empty choice means "no sensor".
+        if (metric !== '' && !meta.metrics.some((m) => m.id === metric)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['sensor', 'metric'],
+            message: `must be one of: ${meta.metrics.map((m) => m.id).join(', ')}`,
+          })
+        }
+        extras.sensorMetric = metric === '' ? null : metric
+      }
+
+
+      if (hasCapability(meta, entity.type, CAP_GEOFENCE)) {
+        const result = geofenceSchema.safeParse(geofence)
+        if (result.success) {
+          extras.geofence = result.data
+        } else {
+          for (const issue of result.error.issues) {
+            ctx.addIssue({ code: 'custom', path: ['geofence', ...issue.path], message: issue.message })
+          }
+        }
+      }
+
+      if (ctx.issues.length > 0) return z.NEVER
+      return { entity, extras }
+    })
+}
+
+/**
+ * Data saved next to the entity, only for types with the matching capability:
+ * the installation schedule to PUT (null = not tracked) and the sensor
+ * metric (null = no sensor).
+ */
+export interface EntityExtras {
+  installation: InstallationInput | null
+  sensorMetric: string | null
+  /** The operating zone to PUT; null = no zone. */
+  geofence: GeofenceInput | null
 }
 
 export type EntityFormSchema = ReturnType<typeof createEntityFormSchema>
 /** Raw form values (attributes as editor rows). */
 export type EntityFormValues = z.input<EntityFormSchema>
-/** Parsed values, ready to send as EntityInput. */
+/** Parsed values: the EntityInput to send, and the extras saved after it. */
 export type EntityFormOutput = z.output<EntityFormSchema>
 
 export function emptyFormValues(latitude: number, longitude: number): EntityFormValues {
@@ -75,10 +150,20 @@ export function emptyFormValues(latitude: number, longitude: number): EntityForm
     longitude,
     description: '',
     attributes: toAttributesValue(null),
+    installation: emptyInstallationValue(),
+    sensor: { metric: '' },
+    geofence: toGeofenceValue(null, latitude, longitude),
   }
 }
 
-export function entityToFormValues(entity: Entity): EntityFormValues {
+/** Stored data of the entity's extras, used as the edit form's starting values. */
+export interface StoredExtras {
+  installation?: Installation | null
+  sensor?: SensorConfig | null
+  geofence?: Geofence | null
+}
+
+export function entityToFormValues(entity: Entity, { installation = null, sensor = null, geofence = null }: StoredExtras = {}): EntityFormValues {
   return {
     name: entity.name,
     type: entity.type,
@@ -87,5 +172,8 @@ export function entityToFormValues(entity: Entity): EntityFormValues {
     longitude: entity.longitude,
     description: entity.description,
     attributes: toAttributesValue(entity.attributes),
+    installation: toInstallationValue(installation),
+    sensor: { metric: sensor?.metric ?? '' },
+    geofence: toGeofenceValue(geofence, entity.latitude, entity.longitude),
   }
 }

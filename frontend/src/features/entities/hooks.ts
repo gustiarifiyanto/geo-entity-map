@@ -8,6 +8,9 @@ import {
   updateEntityLocation,
 } from '../../api/entities'
 import type { Entity, EntityFilter, EntityInput, LocationInput } from '../../types/entity'
+import { installationKeys } from '../installations/hooks'
+import { geofenceKeys } from '../geofences/hooks'
+import { sensorKeys } from '../sensors/hooks'
 
 export const metaKey = ['meta'] as const
 
@@ -42,7 +45,14 @@ export function useUpdateEntity() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: EntityInput }) => updateEntity(id, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: entityKeys.all }),
+    // A type change can show or hide an installation schedule.
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: entityKeys.all }),
+        queryClient.invalidateQueries({ queryKey: installationKeys.all }),
+        queryClient.invalidateQueries({ queryKey: sensorKeys.all }),
+        queryClient.invalidateQueries({ queryKey: geofenceKeys.all }),
+      ]),
   })
 }
 
@@ -51,7 +61,14 @@ export function useDeleteEntity() {
   return useMutation({
     mutationFn: deleteEntity,
     // Refetch on failure too: a 404 means it was already deleted elsewhere.
-    onSettled: () => queryClient.invalidateQueries({ queryKey: entityKeys.all }),
+    // The entity's installation schedule is deleted with it.
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: entityKeys.all }),
+        queryClient.invalidateQueries({ queryKey: installationKeys.all }),
+        queryClient.invalidateQueries({ queryKey: sensorKeys.all }),
+        queryClient.invalidateQueries({ queryKey: geofenceKeys.all }),
+      ]),
   })
 }
 
@@ -79,6 +96,11 @@ export function useUpdateEntityLocation() {
         queryClient.setQueryData(key, data)
       }
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: entityKeys.all }),
+    // Moving changes the distance to the operating zone, too.
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: entityKeys.all }),
+        queryClient.invalidateQueries({ queryKey: geofenceKeys.all }),
+      ]),
   })
 }

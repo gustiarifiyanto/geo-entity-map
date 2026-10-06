@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/model"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/service"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/validation"
 )
@@ -14,19 +15,28 @@ import (
 type Options struct {
 	// SecureCookie marks the session cookie Secure (HTTPS only).
 	SecureCookie bool
+	// DemoAccounts are listed on the login page; nil outside demo mode.
+	DemoAccounts []model.DemoAccount
+}
+
+// Services are the business services the API is built on.
+type Services struct {
+	Entities      *service.EntityService
+	Auth          *service.AuthService
+	Photos        *service.PhotoService
+	Installations *service.InstallationService
+	Sensors       *service.SensorService
+	Geofences     *service.GeofenceService
 }
 
 // NewRouter returns the HTTP handler for the whole API.
-func NewRouter(
-	entities *service.EntityService,
-	auth *service.AuthService,
-	photos *service.PhotoService,
-	val *validation.Validator,
-	opts Options,
-) http.Handler {
-	h := &entityHandler{svc: entities, val: val}
-	a := &authHandler{svc: auth, val: val, secureCookie: opts.SecureCookie}
-	p := &photoHandler{svc: photos}
+func NewRouter(svc Services, val *validation.Validator, opts Options) http.Handler {
+	h := &entityHandler{svc: svc.Entities, val: val}
+	a := &authHandler{svc: svc.Auth, val: val, secureCookie: opts.SecureCookie, demo: opts.DemoAccounts}
+	p := &photoHandler{svc: svc.Photos}
+	inst := &installationHandler{svc: svc.Installations, val: val}
+	sens := &sensorHandler{svc: svc.Sensors, val: val}
+	geo := &geofenceHandler{svc: svc.Geofences, val: val}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
@@ -39,11 +49,15 @@ func NewRouter(
 	})
 
 	r.Route("/api", func(r chi.Router) {
+		// Called by IoT devices, which authenticate with their API key, not a session.
+		r.Post("/devices/{id}/readings", sens.deviceReading)
+
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", a.register)
 			r.Post("/login", a.login)
 			r.Post("/logout", a.logout)
 			r.With(a.requireUser).Get("/me", a.me)
+			r.Get("/demo-accounts", a.demoAccounts)
 		})
 
 		// Everything else needs a login; changing entities needs the admin role.
@@ -62,8 +76,21 @@ func NewRouter(
 					r.With(requireAdmin).Patch("/location", h.updateLocation)
 					r.Get("/photos", p.list)
 					r.With(requireAdmin).Post("/photos", p.upload)
+					r.Get("/installation", inst.get)
+					r.With(requireAdmin).Put("/installation", inst.put)
+					r.With(requireAdmin).Delete("/installation", inst.delete)
+					r.Get("/sensor", sens.get)
+					r.With(requireAdmin).Put("/sensor", sens.put)
+					r.With(requireAdmin).Delete("/sensor", sens.delete)
+					r.With(requireAdmin).Post("/sensor/key", sens.createKey)
+					r.Get("/readings", sens.readings)
+					r.Get("/geofence", geo.get)
+					r.With(requireAdmin).Put("/geofence", geo.put)
+					r.With(requireAdmin).Delete("/geofence", geo.delete)
 				})
 			})
+			r.Get("/installations", inst.list)
+			r.Get("/geofences", geo.list)
 			r.Route("/photos/{photoID}", func(r chi.Router) {
 				r.Get("/", p.get)
 				r.With(requireAdmin).Delete("/", p.delete)

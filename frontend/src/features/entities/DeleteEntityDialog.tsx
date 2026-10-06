@@ -1,6 +1,7 @@
 import { ApiError } from '../../api/client'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { useToast } from '../../components/toast/context'
+import { useI18n } from '../../i18n/context'
 import type { Entity } from '../../types/entity'
 import { useDeleteEntity } from './hooks'
 
@@ -12,6 +13,7 @@ interface DeleteEntityDialogProps {
 }
 
 export function DeleteEntityDialog({ entity, onClose, onDeleted }: DeleteEntityDialogProps) {
+  const { t, errorText } = useI18n()
   const remove = useDeleteEntity()
   const toast = useToast()
 
@@ -19,36 +21,31 @@ export function DeleteEntityDialog({ entity, onClose, onDeleted }: DeleteEntityD
     if (!entity) return
     try {
       await remove.mutateAsync(entity.id)
-      toast.success(`"${entity.name}" deleted.`)
+      toast.success(t.deleteEntity.done(entity.name))
       onDeleted()
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
         // Already gone (e.g. deleted in another tab); the list was refetched.
-        toast.error(`"${entity.name}" no longer exists.`)
+        toast.error(t.deleteEntity.gone(entity.name))
         onDeleted()
         return
       }
       // Keep the dialog open so the user can retry.
-      toast.error(`Could not delete "${entity.name}": ${error instanceof Error ? error.message : 'unknown error'}`)
+      toast.error(t.deleteEntity.failed(entity.name, errorText(error)))
     }
   }
 
   return (
     <ConfirmDialog
       open={entity !== null}
-      title="Delete entity?"
-      confirmLabel="Delete"
-      pendingLabel="Deleting…"
+      title={t.deleteEntity.title}
+      confirmLabel={t.common.delete}
+      pendingLabel={t.common.deleting}
       pending={remove.isPending}
       onConfirm={() => void confirm()}
       onCancel={onClose}
     >
-      {entity && (
-        <p>
-          <span className="font-medium text-gray-900">{entity.name}</span> will be permanently deleted.
-          This cannot be undone.
-        </p>
-      )}
+      {entity && <p>{t.deleteEntity.body(entity.name)}</p>}
     </ConfirmDialog>
   )
 }

@@ -30,6 +30,7 @@ const (
 type UserRepository interface {
 	CreateUser(ctx context.Context, u model.User) error
 	UserByEmail(ctx context.Context, email string) (model.User, error)
+	UpdatePasswordHash(ctx context.Context, id, hash string) error
 	CreateSession(ctx context.Context, tokenHash, userID string, createdAt, expiresAt time.Time) error
 	UserBySession(ctx context.Context, tokenHash string, now time.Time) (model.User, time.Time, error)
 	TouchSession(ctx context.Context, tokenHash string, seenAt time.Time) error
@@ -191,4 +192,58 @@ func (s *AuthService) startSession(ctx context.Context, u model.User) (Session, 
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+// demoAccounts are the accounts SeedDemoAccounts keeps ready, one per role.
+var demoAccounts = []struct {
+	email string
+	role  model.Role
+}{
+	{model.DemoAdminEmail, model.RoleAdmin},
+	{model.DemoUserEmail, model.RoleUser},
+}
+
+// SeedDemoAccounts creates the demo admin and demo user, or resets their
+// passwords, to a new random password each time it runs. It returns the
+// logins to show on the login page. An email already registered with another
+// role is left untouched and not returned, so demo mode never promotes anyone.
+func (s *AuthService) SeedDemoAccounts(ctx context.Context) ([]model.DemoAccount, error) {
+	accounts := make([]model.DemoAccount, 0, len(demoAccounts))
+	for _, d := range demoAccounts {
+		raw := make([]byte, 12)
+		if _, err := rand.Read(raw); err != nil {
+			return nil, fmt.Errorf("generate demo password: %w", err)
+		}
+		password := base64.RawURLEncoding.EncodeToString(raw)
+
+		_, err := s.createUser(ctx, d.email, password, d.role)
+		if errors.Is(err, model.ErrEmailTaken) {
+			err = s.resetDemoPassword(ctx, d.email, d.role, password)
+			if errors.Is(err, errDemoRoleTaken) {
+				continue
+			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("seed demo account %s: %w", d.email, err)
+		}
+		accounts = append(accounts, model.DemoAccount{Role: d.role, Email: d.email, Password: password})
+	}
+	return accounts, nil
+}
+
+var errDemoRoleTaken = errors.New("demo email registered with another role")
+
+func (s *AuthService) resetDemoPassword(ctx context.Context, email string, role model.Role, password string) error {
+	u, err := s.repo.UserByEmail(ctx, email)
+	if err != nil {
+		return err
+	}
+	if u.Role != role {
+		return errDemoRoleTaken
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), s.cost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	return s.repo.UpdatePasswordHash(ctx, u.ID, string(hash))
 }

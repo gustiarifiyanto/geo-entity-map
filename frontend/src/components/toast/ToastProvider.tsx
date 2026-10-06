@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ToastContext, type ToastAction, type ToastApi, type ToastOptions } from './context'
+import { useI18n } from '../../i18n/context'
 
 type Variant = 'success' | 'error'
 
@@ -16,6 +17,7 @@ const ACTION_DURATION_MS = 8000
 const MAX_VISIBLE = 3
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useI18n()
   const [toasts, setToasts] = useState<Toast[]>([])
   const nextId = useRef(0)
 
@@ -71,7 +73,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => dismiss(toast.id)}
-              aria-label="Dismiss notification"
+              aria-label={t.common.dismiss}
               className="opacity-60 hover:opacity-100"
             >
               ×

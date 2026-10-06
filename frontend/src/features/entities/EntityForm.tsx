@@ -5,12 +5,17 @@ import {
   charCount,
   createEntityFormSchema,
   DESCRIPTION_MAX,
+  type EntityExtras,
   type EntityFormOutput,
   type EntityFormValues,
 } from '../../schemas/entity'
 import { inputClass } from '../../components/formStyles'
 import type { EntityInput, Meta } from '../../types/entity'
-import { formatLabel } from './labels'
+import { useI18n } from '../../i18n/context'
+import { CAP_GEOFENCE, CAP_INSTALLATION, CAP_READINGS, hasCapability } from '../../schemas/capabilities'
+import { GeofenceFields } from '../geofences/GeofenceFields'
+import { SensorFields } from '../sensors/SensorFields'
+import { InstallationFields } from '../installations/InstallationFields'
 import { AttributesEditor, type AttributesErrors } from './AttributesEditor'
 import { applyServerError } from './serverErrors'
 
@@ -23,9 +28,15 @@ interface EntityFormProps {
   pickedLatitude?: number
   pickedLongitude?: number
   locationHint?: string
+  /** The entity being edited; undefined for a new one. */
+  entityId?: string
   /** Extra controls shown after the regular fields (e.g. the photo picker). */
   extraFields?: ReactNode
-  onSubmit: (input: EntityInput) => Promise<void>
+  /**
+   * Receives the entity body and, separately, the extras (installation,
+   * sensor) to save after it; extras of other types are always null.
+   */
+  onSubmit: (input: EntityInput, extras: EntityExtras) => Promise<void>
   onCancel: () => void
 }
 
@@ -37,10 +48,13 @@ export function EntityForm({
   pickedLatitude,
   pickedLongitude,
   locationHint,
+  entityId,
   extraFields,
   onSubmit,
   onCancel,
 }: EntityFormProps) {
+  const i18n = useI18n()
+  const { t, value } = i18n
   const schema = useMemo(() => createEntityFormSchema(meta), [meta])
   const {
     register,
@@ -68,12 +82,17 @@ export function EntityForm({
   }, [pickedLatitude, pickedLongitude, setValue])
 
   const description = useWatch({ control, name: 'description' })
+  const type = useWatch({ control, name: 'type' })
+  const installationEnabled = useWatch({ control, name: 'installation.enabled' })
+  const showInstallation = hasCapability(meta, type, CAP_INSTALLATION)
+  const showSensor = hasCapability(meta, type, CAP_READINGS)
+  const showGeofence = hasCapability(meta, type, CAP_GEOFENCE)
 
-  const submit = handleSubmit(async (values) => {
+  const submit = handleSubmit(async ({ entity, extras }) => {
     try {
-      await onSubmit(values)
+      await onSubmit(entity, extras)
     } catch (error) {
-      applyServerError(error, setError)
+      applyServerError(error, setError, i18n.errorText)
     }
   })
 
@@ -89,7 +108,7 @@ export function EntityForm({
         <button
           type="button"
           onClick={onCancel}
-          aria-label="Cancel"
+          aria-label={t.common.cancel}
           className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
         >
           <svg viewBox="0 0 20 20" className="h-5 w-5" fill="currentColor" aria-hidden="true">
@@ -105,7 +124,7 @@ export function EntityForm({
           </div>
         )}
 
-        <FormField id="name" label="Name" error={errors.name?.message}>
+        <FormField id="name" label={t.form.name} error={errors.name?.message}>
           <input
             id="name"
             type="text"
@@ -118,7 +137,7 @@ export function EntityForm({
         </FormField>
 
         <div className="grid grid-cols-2 gap-3">
-          <FormField id="type" label="Type" error={errors.type?.message}>
+          <FormField id="type" label={t.form.type} error={errors.type?.message}>
             <select
               id="type"
               aria-invalid={errors.type ? true : undefined}
@@ -126,16 +145,16 @@ export function EntityForm({
               {...register('type')}
             >
               <option value="" disabled>
-                Select type
+                {t.form.selectType}
               </option>
               {meta.types.map((type) => (
                 <option key={type} value={type}>
-                  {formatLabel(type)}
+                  {value(type)}
                 </option>
               ))}
             </select>
           </FormField>
-          <FormField id="status" label="Status" error={errors.status?.message}>
+          <FormField id="status" label={t.form.status} error={errors.status?.message}>
             <select
               id="status"
               aria-invalid={errors.status ? true : undefined}
@@ -143,11 +162,11 @@ export function EntityForm({
               {...register('status')}
             >
               <option value="" disabled>
-                Select status
+                {t.form.selectStatus}
               </option>
               {meta.statuses.map((status) => (
                 <option key={status} value={status}>
-                  {formatLabel(status)}
+                  {value(status)}
                 </option>
               ))}
             </select>
@@ -156,7 +175,7 @@ export function EntityForm({
 
         <div>
           <div className="grid grid-cols-2 gap-3">
-            <FormField id="latitude" label="Latitude" error={errors.latitude?.message}>
+            <FormField id="latitude" label={t.form.latitude} error={errors.latitude?.message}>
               <input
                 id="latitude"
                 type="number"
@@ -167,7 +186,7 @@ export function EntityForm({
                 {...register('latitude', { valueAsNumber: true })}
               />
             </FormField>
-            <FormField id="longitude" label="Longitude" error={errors.longitude?.message}>
+            <FormField id="longitude" label={t.form.longitude} error={errors.longitude?.message}>
               <input
                 id="longitude"
                 type="number"
@@ -184,7 +203,7 @@ export function EntityForm({
 
         <FormField
           id="description"
-          label="Description"
+          label={t.form.description}
           optional
           error={errors.description?.message}
           aside={`${charCount(description ?? '')}/${DESCRIPTION_MAX}`}
@@ -199,7 +218,7 @@ export function EntityForm({
         </FormField>
 
         {/* The editor shows its own per-row errors. */}
-        <FormField id="attributes" label="Attributes" optional>
+        <FormField id="attributes" label={t.form.attributes} optional>
           <Controller
             control={control}
             name="attributes"
@@ -214,6 +233,22 @@ export function EntityForm({
           />
         </FormField>
 
+        {showInstallation && (
+          <InstallationFields register={register} errors={errors.installation} enabled={installationEnabled} />
+        )}
+
+        {showSensor && <SensorFields register={register} errors={errors.sensor} metrics={meta.metrics} />}
+
+        {showGeofence && (
+          <GeofenceFields
+            entityId={entityId ?? null}
+            register={register}
+            control={control}
+            setValue={setValue}
+            errors={errors.geofence}
+          />
+        )}
+
         {extraFields}
       </div>
 
@@ -223,14 +258,14 @@ export function EntityForm({
           onClick={onCancel}
           className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
         >
-          Cancel
+          {t.common.cancel}
         </button>
         <button
           type="submit"
           disabled={isSubmitting}
           className="flex-1 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-60"
         >
-          {isSubmitting ? 'Saving…' : submitLabel}
+          {isSubmitting ? t.common.saving : submitLabel}
         </button>
       </footer>
     </form>
@@ -247,12 +282,13 @@ interface FormFieldProps {
 }
 
 function FormField({ id, label, error, optional, aside, children }: FormFieldProps) {
+  const { t, fieldError } = useI18n()
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between">
         <label htmlFor={id} className="text-sm font-medium text-gray-700">
           {label}
-          {optional && <span className="ml-1 font-normal text-gray-400">(optional)</span>}
+          {optional && <span className="ml-1 font-normal text-gray-400">{t.common.optional}</span>}
         </label>
         {aside && <span className="text-xs text-gray-400">{aside}</span>}
       </div>
@@ -260,7 +296,7 @@ function FormField({ id, label, error, optional, aside, children }: FormFieldPro
       {error && (
         <p className="mt-1 text-xs text-red-600" role="alert">
           {/* Messages are fragments shared with the backend, e.g. "is required". */}
-          {label} {error}
+          {fieldError(label, error)}
         </p>
       )}
     </div>

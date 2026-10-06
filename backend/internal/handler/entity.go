@@ -17,12 +17,19 @@ type entityHandler struct {
 }
 
 type metaResponse struct {
-	Types    []model.EntityType   `json:"types"`
-	Statuses []model.EntityStatus `json:"statuses"`
+	Types        []model.EntityType                      `json:"types"`
+	Statuses     []model.EntityStatus                    `json:"statuses"`
+	Capabilities map[model.EntityType][]model.Capability `json:"capabilities"`
+	Metrics      []model.MetricSpec                      `json:"metrics"`
 }
 
 func (h *entityHandler) meta(w http.ResponseWriter, _ *http.Request) {
-	writeData(w, http.StatusOK, metaResponse{Types: model.EntityTypes, Statuses: model.EntityStatuses})
+	writeData(w, http.StatusOK, metaResponse{
+		Types:        model.EntityTypes,
+		Statuses:     model.EntityStatuses,
+		Capabilities: model.TypeCapabilities,
+		Metrics:      model.Metrics,
+	})
 }
 
 func (h *entityHandler) list(w http.ResponseWriter, r *http.Request) {

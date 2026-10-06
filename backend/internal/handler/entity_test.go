@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -52,9 +53,16 @@ type testApp struct {
 	auth      *service.AuthService
 	db        *sql.DB
 	uploadDir string
+	sensors   *service.SensorService
 }
 
 func newApp(t *testing.T) testApp {
+	t.Helper()
+	return newAppWith(t, nil)
+}
+
+// newAppWith is newApp with router options built from the seeded auth service.
+func newAppWith(t *testing.T, options func(*service.AuthService) handler.Options) testApp {
 	t.Helper()
 	ctx := context.Background()
 	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "test.db"))
@@ -83,8 +91,22 @@ func newApp(t *testing.T) testApp {
 	}
 	entities := service.NewEntityService(repository.NewEntityRepository(db), files)
 	photos := service.NewPhotoService(repository.NewPhotoRepository(db), files, entities)
-	router := handler.NewRouter(entities, auth, photos, val, handler.Options{})
-	return testApp{router: router, auth: auth, db: db, uploadDir: uploadDir}
+	installations := service.NewInstallationService(repository.NewInstallationRepository(db), entities, time.UTC)
+	sensors := service.NewSensorService(repository.NewSensorRepository(db), entities)
+	geofences := service.NewGeofenceService(repository.NewGeofenceRepository(db), entities)
+	opts := handler.Options{}
+	if options != nil {
+		opts = options(auth)
+	}
+	router := handler.NewRouter(handler.Services{
+		Entities:      entities,
+		Auth:          auth,
+		Photos:        photos,
+		Installations: installations,
+		Sensors:       sensors,
+		Geofences:     geofences,
+	}, val, opts)
+	return testApp{router: router, auth: auth, db: db, uploadDir: uploadDir, sensors: sensors}
 }
 
 // login returns a session cookie for an existing account.

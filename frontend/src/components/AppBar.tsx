@@ -1,12 +1,10 @@
-import { formatLabel } from '../features/entities/labels'
+import { useI18n } from '../i18n/context'
 import type { User } from '../types/auth'
+import { LanguageSwitch } from './LanguageSwitch'
 
 export type View = 'map' | 'dashboard'
 
-const VIEWS: { id: View; label: string }[] = [
-  { id: 'map', label: 'Map' },
-  { id: 'dashboard', label: 'Dashboard' },
-]
+const VIEWS: View[] = ['map', 'dashboard']
 
 interface AppBarProps {
   user: User
@@ -19,20 +17,21 @@ interface AppBarProps {
 
 /** Translucent bar floating over the map, so the map shows through softly. */
 export function AppBar({ user, view, onViewChange, onLogout, loggingOut }: AppBarProps) {
-  const activeIndex = VIEWS.findIndex((v) => v.id === view)
+  const { t, value } = useI18n()
+  const activeIndex = VIEWS.indexOf(view)
 
   return (
     <header className="absolute inset-x-0 top-0 z-[1200] flex h-14 items-center gap-3 border-b border-white/50 bg-white/70 px-4 shadow-sm backdrop-blur-md">
-      <h1 className="hidden text-base font-semibold text-gray-900 sm:block">Geo Entity Map</h1>
+      <h1 className="hidden text-base font-semibold text-gray-900 sm:block">{t.appBar.title}</h1>
 
-      <div role="tablist" aria-label="View" className="relative grid grid-cols-2 rounded-lg bg-gray-900/5 p-1 text-sm">
+      <div role="tablist" aria-label={t.appBar.viewTabs} className="relative grid grid-cols-2 rounded-lg bg-gray-900/5 p-1 text-sm">
         {/* Sliding indicator behind the active tab. */}
         <span
           aria-hidden="true"
           className="absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-md bg-white shadow-sm transition-transform duration-300 ease-out motion-reduce:transition-none"
           style={{ transform: `translateX(${activeIndex * 100}%)` }}
         />
-        {VIEWS.map(({ id, label }) => (
+        {VIEWS.map((id) => (
           <button
             key={id}
             type="button"
@@ -43,22 +42,23 @@ export function AppBar({ user, view, onViewChange, onLogout, loggingOut }: AppBa
               view === id ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'
             }`}
           >
-            {label}
+            {t.appBar[id]}
           </button>
         ))}
       </div>
 
       <div className="ml-auto flex min-w-0 items-center gap-2 text-xs">
+        <LanguageSwitch />
         <span className="hidden min-w-0 truncate text-gray-700 md:block" title={user.email}>
           {user.email}
         </span>
-        <span className="rounded-full bg-gray-900/5 px-2 py-0.5 font-medium text-gray-700">{formatLabel(user.role)}</span>
+        <span className="rounded-full bg-gray-900/5 px-2 py-0.5 font-medium text-gray-700">{value(user.role)}</span>
         <button
           type="button"
           onClick={onLogout}
           disabled={loggingOut}
-          aria-label="Log out"
-          title="Log out"
+          aria-label={t.appBar.logout}
+          title={t.appBar.logout}
           className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-60"
         >
           <svg viewBox="0 0 20 20" className="h-5 w-5" fill="currentColor" aria-hidden="true">

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+	_ "time/tzdata" // embeds the time zone database, so APP_TIMEZONE works on Windows too
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/model"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/repository"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/service"
+	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/simulator"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/storage"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/validation"
 )
@@ -30,6 +32,12 @@ type config struct {
 	adminEmail    string
 	adminPassword string
 	uploadDir     string
+	// timezone decides which calendar day "today" is for installation status.
+	timezone *time.Location
+	// simulateSensors writes dummy readings for IoT devices until real ones send data.
+	simulateSensors bool
+	// demoAccounts creates a demo admin and user with fresh passwords at every start.
+	demoAccounts bool
 }
 
 func loadConfig() (config, error) {
@@ -37,13 +45,28 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return config{}, fmt.Errorf("COOKIE_SECURE must be true or false: %w", err)
 	}
+	simulate, err := strconv.ParseBool(getenv("SIMULATE_SENSORS", "true"))
+	if err != nil {
+		return config{}, fmt.Errorf("SIMULATE_SENSORS must be true or false: %w", err)
+	}
+	demo, err := strconv.ParseBool(getenv("DEMO_ACCOUNTS", "false"))
+	if err != nil {
+		return config{}, fmt.Errorf("DEMO_ACCOUNTS must be true or false: %w", err)
+	}
+	tz, err := time.LoadLocation(getenv("APP_TIMEZONE", "Asia/Jakarta"))
+	if err != nil {
+		return config{}, fmt.Errorf("APP_TIMEZONE must be an IANA time zone such as Asia/Jakarta: %w", err)
+	}
 	return config{
-		port:          getenv("PORT", "8080"),
-		dbPath:        getenv("DB_PATH", "./data/app.db"),
-		cookieSecure:  secure,
-		adminEmail:    os.Getenv("ADMIN_EMAIL"),
-		adminPassword: os.Getenv("ADMIN_PASSWORD"),
-		uploadDir:     getenv("UPLOAD_DIR", "./data/uploads"),
+		port:            getenv("PORT", "8080"),
+		dbPath:          getenv("DB_PATH", "./data/app.db"),
+		cookieSecure:    secure,
+		adminEmail:      os.Getenv("ADMIN_EMAIL"),
+		adminPassword:   os.Getenv("ADMIN_PASSWORD"),
+		uploadDir:       getenv("UPLOAD_DIR", "./data/uploads"),
+		timezone:        tz,
+		simulateSensors: simulate,
+		demoAccounts:    demo,
 	}, nil
 }
 
@@ -93,6 +116,9 @@ func run() error {
 	}
 	entities := service.NewEntityService(repository.NewEntityRepository(db), files)
 	photos := service.NewPhotoService(repository.NewPhotoRepository(db), files, entities)
+	installations := service.NewInstallationService(repository.NewInstallationRepository(db), entities, cfg.timezone)
+	sensors := service.NewSensorService(repository.NewSensorRepository(db), entities)
+	geofences := service.NewGeofenceService(repository.NewGeofenceRepository(db), entities)
 	auth, err := service.NewAuthService(repository.NewUserRepository(db), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -100,19 +126,36 @@ func run() error {
 	if err := seedAdmin(ctx, cfg, auth, val); err != nil {
 		return err
 	}
+	demoAccounts, err := seedDemoAccounts(ctx, cfg, auth)
+	if err != nil {
+		return err
+	}
+	router := handler.NewRouter(handler.Services{
+		Entities:      entities,
+		Auth:          auth,
+		Photos:        photos,
+		Installations: installations,
+		Sensors:       sensors,
+		Geofences:     geofences,
+	}, val, handler.Options{SecureCookie: cfg.cookieSecure, DemoAccounts: demoAccounts})
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.port,
-		Handler:           handler.NewRouter(entities, auth, photos, val, handler.Options{SecureCookie: cfg.cookieSecure}),
+		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
+	if cfg.simulateSensors {
+		slog.Info("sensor simulator enabled: dummy readings every minute (SIMULATE_SENSORS=false to turn off)")
+		go simulator.New(sensors, val, uint64(time.Now().UnixNano())).Run(ctx, time.Minute)
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("server listening", "addr", srv.Addr, "db", cfg.dbPath, "uploads", cfg.uploadDir)
+		slog.Info("server listening", "addr", srv.Addr, "db", cfg.dbPath, "uploads", cfg.uploadDir, "timezone", cfg.timezone.String())
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -169,4 +212,22 @@ func seedAdmin(ctx context.Context, cfg config, auth *service.AuthService, val *
 		slog.Info("admin account already exists", "email", u.Email)
 	}
 	return nil
+}
+
+// seedDemoAccounts prepares the demo admin and demo user when DEMO_ACCOUNTS
+// is on. Their logins are public on the login page, so it is for local
+// testing only.
+func seedDemoAccounts(ctx context.Context, cfg config, auth *service.AuthService) ([]model.DemoAccount, error) {
+	if !cfg.demoAccounts {
+		return nil, nil
+	}
+	accounts, err := auth.SeedDemoAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	slog.Warn("demo mode: demo logins are shown on the login page with new passwords; never enable DEMO_ACCOUNTS on a public server", "accounts", len(accounts))
+	if len(accounts) < 2 {
+		slog.Warn("a demo email is already registered with another role; that demo account is not shown")
+	}
+	return accounts, nil
 }

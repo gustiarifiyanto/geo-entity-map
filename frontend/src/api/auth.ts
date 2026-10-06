@@ -1,4 +1,4 @@
-import type { Credentials, User } from '../types/auth'
+import type { Credentials, DemoAccount, User } from '../types/auth'
 import { http } from './client'
 
 export function getMe(): Promise<User> {
@@ -15,4 +15,9 @@ export function register(credentials: Credentials): Promise<User> {
 
 export function logout(): Promise<void> {
   return http.post<void>('/auth/logout', undefined)
+}
+
+/** Demo logins for the login page; empty unless the server runs in demo mode. */
+export function getDemoAccounts(): Promise<DemoAccount[]> {
+  return http.get<DemoAccount[]>('/auth/demo-accounts')
 }

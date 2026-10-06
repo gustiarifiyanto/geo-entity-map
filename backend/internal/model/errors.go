@@ -20,4 +20,18 @@ var (
 	ErrUnsupportedPhoto = errors.New("unsupported photo type")
 	// ErrTooManyPhotos is returned when an entity already has MaxPhotosPerEntity photos.
 	ErrTooManyPhotos = errors.New("too many photos")
+	// ErrNoInstallation is returned for installation requests on an entity
+	// whose type does not have the installation capability.
+	ErrNoInstallation = errors.New("this entity type has no installation data")
+	// ErrNoReadings is returned for sensor requests on an entity whose type
+	// does not have the readings capability.
+	ErrNoReadings = errors.New("this entity type has no sensor data")
+	// ErrNoGeofence is returned for zone requests on an entity whose type
+	// does not have the geofence capability.
+	ErrNoGeofence = errors.New("this entity type has no operating zone")
+	// ErrNoSensorMetric is returned when a device key is requested before a metric is chosen.
+	ErrNoSensorMetric = errors.New("choose the sensor metric first")
+	// ErrInvalidDeviceKey is returned for a missing or wrong device API key.
+	// It deliberately does not say which.
+	ErrInvalidDeviceKey = errors.New("invalid device key")
 )

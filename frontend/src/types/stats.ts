@@ -6,6 +6,16 @@ export interface UserStats {
   by_role: Record<string, number>
   with_active_session: number
   online: number
+  /** Who is behind with_active_session (role user only), most recently seen first. */
+  active_users: ActiveUser[]
+}
+
+export interface ActiveUser {
+  id: string
+  email: string
+  /** Null for sessions from before activity was recorded. */
+  last_seen_at: string | null
+  online: boolean
 }
 
 export interface AdminStats {
