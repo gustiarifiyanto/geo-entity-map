@@ -170,8 +170,9 @@ Otorisasi **wajib** dilakukan di middleware backend. Frontend hanya menyembunyik
 }
 ```
 
-- `total`: semua user terdaftar.
-- `by_role`: berisi **setiap** role di `model.Roles`, termasuk yang jumlahnya 0.
+- `total`, `with_active_session`, dan `online` **hanya menghitung role `user`**. Admin adalah pembaca dashboard, jadi tidak ikut dihitung supaya angkanya tidak ambigu (keputusan developer).
+- `total`: user ber-role `user` yang terdaftar.
+- `by_role`: berisi **setiap** role di `model.Roles` (termasuk `admin`), termasuk yang jumlahnya 0.
 - `with_active_session`: jumlah **user** (bukan session) yang punya minimal satu session belum kedaluwarsa.
 - `online`: jumlah user dengan session belum kedaluwarsa yang `last_seen_at`-nya dalam `online_window_minutes` terakhir.
 - Batas online (5 menit) adalah konstanta di backend dan dikirim di response, jadi frontend tidak meng-hardcode angkanya.

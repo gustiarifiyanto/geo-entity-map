@@ -11,6 +11,10 @@ Aplikasi web untuk menampilkan dan mengelola **entitas yang memiliki lokasi geog
   - **`admin`** bisa menambah, mengedit, memindah, dan menghapus entitas.
   - **`user`** hanya bisa melihat map dan detail. Register publik selalu membuat role `user`.
   - Hak akses ditegakkan di backend (401/403), frontend hanya menyembunyikan kontrol.
+- **Dashboard** (tab *Map | Dashboard* di bar atas):
+  - **Semua role:** total entitas, jumlah per status (warna sama dengan pin), dan jumlah per type.
+  - **Admin saja:** jumlah user terdaftar, *Online (last 5 min)*, dan *With an active session* (ketiganya hanya role `user`, admin tidak dihitung), plus jumlah per role. Diperbarui otomatis tiap 30 detik.
+  - Pindah tab tidak menghilangkan pin yang dipilih, form yang terbuka, atau posisi map.
 - Semua entitas tampil sebagai pin di map. Warna pin menunjukkan status (legenda di kartu kiri atas).
 - **Tambah:** klik area kosong di map → form terbuka dengan lat/lng terisi. Selama form terbuka, klik titik lain atau geser pin hitam untuk mengubah lokasi.
 - **Detail:** klik pin → panel detail (type, status, koordinat, deskripsi, attributes, timestamp).
@@ -78,8 +82,13 @@ cd frontend && npm run typecheck && npm run lint
   - register (role selalu `user`, field `role` ditolak), email duplikat beda huruf besar/kecil (422);
   - login gagal dengan pesan yang sama untuk email tidak terdaftar maupun password salah (401);
   - session kedaluwarsa, logout, login ulang mengganti session lama;
-  - matriks hak akses semua route × belum login / `user` / `admin`, dan cek auth berjalan sebelum validasi body.
-- **Database** (`internal/database`): migrasi idempoten, seed hanya saat tabel kosong, constraint koordinat, CHECK role, email unik, hapus user ikut menghapus session.
+  - matriks hak akses semua route × belum login / `user` / `admin`, dan cek auth berjalan sebelum validasi body;
+  - bentuk response `/api/admin/stats`, termasuk role yang jumlahnya 0.
+- **Service auth** (`internal/service/auth_test.go`, dengan jam palsu):
+  - `last_seen_at` tidak ditulis di detik ke-30 dan ke-59, lalu ditulis tepat di menit ke-1;
+  - session lama dengan `last_seen_at` `NULL` tetap bisa dipakai;
+  - statistik: user dengan 2 session dihitung sekali, session kedaluwarsa tidak dihitung, user yang diam 6 menit tidak online, user tepat di batas 5 menit masih online.
+- **Database** (`internal/database`): migrasi idempoten, seed hanya saat tabel kosong, constraint koordinat, CHECK role, email unik, hapus user ikut menghapus session, migrasi menambah `last_seen_at` ke tabel `sessions` lama tanpa kehilangan data.
 
 ## API
 
@@ -98,6 +107,7 @@ Base path `/api`. Request dan response berformat JSON.
 | POST | `/api/auth/login` | Login `{email, password}` | 200 |
 | POST | `/api/auth/logout` | Hapus session (tetap 204 walau belum login) | 204 |
 | GET | `/api/auth/me` | User yang sedang login | 200 |
+| GET | `/api/admin/stats` | Statistik user untuk dashboard admin | 200 |
 
 Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak pernah dikirim.
 
@@ -108,8 +118,25 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 | `/api/auth/*` | ✅ | ✅ | ✅ |
 | `GET /api/meta`, `GET /api/entities[/{id}]` | 401 | ✅ | ✅ |
 | `POST`, `PUT`, `PATCH .../location`, `DELETE` pada `/api/entities` | 401 | 403 | ✅ |
+| `GET /api/admin/stats` | 401 | 403 | ✅ |
 
 **Session:** login dan register memasang cookie `session` (`HttpOnly`, `SameSite=Lax`, berlaku 7 hari). Isinya token acak 32 byte; database hanya menyimpan hash SHA-256 token tersebut, sehingga file DB yang bocor tidak bisa dipakai untuk login.
+
+**Statistik admin** (`GET /api/admin/stats`):
+
+```json
+{ "data": {
+    "users": { "total": 12, "by_role": { "user": 10, "admin": 2 },
+               "with_active_session": 5, "online": 2 },
+    "online_window_minutes": 5 } }
+```
+
+- `total`, `with_active_session`, dan `online` **hanya menghitung role `user`**. Admin tidak ikut dihitung karena merekalah yang membaca dashboard; jumlah admin tetap terlihat di `by_role`.
+- Yang dihitung adalah **user**, bukan session: satu user yang login di dua browser dihitung sekali.
+- `by_role` selalu berisi semua role, termasuk yang jumlahnya 0.
+- `with_active_session`: user yang punya session belum kedaluwarsa (belum logout dan belum lewat 7 hari).
+- `online`: user dengan session aktif yang dipakai dalam `online_window_minutes` terakhir. Setiap request yang sudah login memperbarui `sessions.last_seen_at`, tetapi paling sering sekali per menit, supaya kebanyakan request hanya membaca DB. Selama tab browser terlihat, frontend memanggil `GET /api/auth/me` tiap 2 menit (*heartbeat*), jadi user yang membuka map tapi diam tetap terhitung online.
+- Statistik entitas dihitung di frontend dari `GET /api/entities`, jadi tidak perlu endpoint tambahan.
 
 Format response:
 
@@ -179,11 +206,12 @@ backend/
   internal/handler/        HTTP: decode, validasi, response, router, middleware auth (401/403)
   internal/service/        logika bisnis (UUID, timestamp, bcrypt, token session)
   internal/repository/     query SQL berparameter (entities, users, sessions)
-  internal/database/       koneksi, migrasi, seed
+  internal/database/       koneksi, migrasi (termasuk penambahan kolom untuk DB lama), seed
 frontend/src/
   api/                     fetch client (ApiError) + fungsi API yang typed
-  components/              ConfirmDialog, toast, style form bersama
-  features/auth/           halaman login/register, hooks user saat ini
+  components/              AppBar (tab Map | Dashboard), ConfirmDialog, toast, style form bersama
+  features/auth/           halaman login/register, hooks user saat ini + heartbeat
+  features/dashboard/      ringkasan entitas, statistik user admin
   features/entities/       map, marker, form, panel detail, hooks React Query, helper geo
   schemas/                 schema zod (mengikuti aturan backend)
   types/                   tipe bersama
@@ -217,7 +245,7 @@ Layering backend: `handler → service → repository`. Handler tidak menjalanka
 | `react-hook-form` + `zod` + `@hookform/resolvers` | Form performan dengan error per field. Schema zod dibangun dari `/api/meta` dan mengikuti aturan backend. |
 | Tailwind CSS | Styling cepat dan konsisten tanpa file CSS terpisah per komponen |
 
-Dialog konfirmasi, toast, dan halaman login dibuat sendiri (elemen `<dialog>` bawaan browser + context React + react-hook-form) supaya **tidak menambah dependency**. Tidak ada router: halaman login tampil saat belum login, map tampil saat sudah login.
+Dialog konfirmasi, toast, halaman login, dan bar di dashboard dibuat sendiri (elemen `<dialog>` bawaan browser + context React + react-hook-form + `div` dengan Tailwind) supaya **tidak menambah dependency**. Library chart tidak diperlukan untuk beberapa bar horizontal. Tidak ada router: halaman login tampil saat belum login, dan tab Map | Dashboard cukup berupa state biasa.
 
 ## Workflow AI
 
@@ -239,6 +267,7 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
    - pesan *"is required"* sudah muncul sebelum form disubmit, karena validasi berjalan saat input kehilangan fokus. Sekarang validasi berjalan saat submit, di form login/register maupun form entitas;
    - tidak bisa memastikan password sudah terketik benar, jadi saya minta tombol *Show/Hide* password;
    - pesan error saat backend mati atau env admin hanya terisi sebagian kurang jelas, sehingga diperjelas.
+8. **Dashboard di branch `feat/dashboard`.** Saya memutuskan dashboard admin dan user digabung dalam satu branch karena keduanya mengubah area UI yang sama. Untuk "user yang sedang login", AI menawarkan dua arti: punya session aktif (sederhana) atau benar-benar aktif dalam 5 menit terakhir (butuh kolom dan heartbeat). Saya memilih yang kedua setelah memastikan perubahannya tidak besar, dan keduanya ditampilkan dengan label yang jujur. Sebelum dipakai di data saya, migrasi kolom baru diuji pada salinan database lokal.
 
 ## Fitur yang Belum Selesai & Keterbatasan
 
@@ -250,12 +279,14 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
 - Update realtime (SSE/WebSocket). Saat ini perubahan dari tab atau user lain baru terlihat saat refetch (misalnya saat window kembali difokus).
 - **Lupa password / ganti password.**
 - **Kelola user** (daftar user, menaikkan user menjadi admin, menghapus akun). Admin tambahan saat ini hanya bisa dibuat lewat `ADMIN_EMAIL`/`ADMIN_PASSWORD` dengan email baru.
-- **Dashboard admin** (jumlah user terdaftar dan yang sedang login), direncanakan di branch terpisah.
+- Daftar nama user yang sedang online, serta grafik/riwayat aktivitas di dashboard.
 - **Rate limiting login.** Belum ada pembatasan percobaan login berulang.
 
 **Keterbatasan yang diketahui:**
 
-- **Tidak ada test otomatis di frontend.** Kualitas dijaga lewat `typecheck` + `lint` dan skrip pengecekan manual. Repository dan service backend tidak punya unit test terpisah, tetapi teruji lewat test handler yang memakai SQLite sungguhan.
+- **Tidak ada test otomatis di frontend.** Kualitas dijaga lewat `typecheck` + `lint` dan skrip pengecekan manual. Repository dan service entitas tidak punya unit test terpisah, tetapi teruji lewat test handler yang memakai SQLite sungguhan. Service auth punya unit test sendiri untuk logika yang bergantung pada waktu.
+- **Status online bukan realtime.** Dihitung dari aktivitas terakhir (batas 5 menit), bukan koneksi terbuka. User yang baru menutup browser masih terhitung online sampai ±5 menit; tab browser yang tersembunyi tidak mengirim heartbeat, jadi user-nya bisa terhitung offline walaupun app masih terbuka.
+- *With an active session* ikut menghitung user yang menutup browser tanpa logout, sampai session-nya kedaluwarsa (7 hari).
 - **Undo pindah lokasi** hanya tersedia selama toast tampil (~8 detik). Jika pin yang sama dipindah dua kali, Undo dari toast pertama mengembalikan ke posisi sebelum pemindahan pertama.
 - Jika data di-refetch tepat saat pin sedang di-drag, pin bisa melompat ke posisi dari server. Kemungkinannya kecil karena refetch otomatis hanya terjadi saat window kembali difokus.
 - **Last write wins:** tidak ada pengecekan konflik/versi saat dua admin mengedit entitas yang sama.
