@@ -44,6 +44,7 @@ func NewRouter(entities *service.EntityService, auth *service.AuthService, val *
 		r.Group(func(r chi.Router) {
 			r.Use(a.requireUser)
 			r.Get("/meta", h.meta)
+			r.With(requireAdmin).Get("/admin/stats", a.stats)
 			r.Route("/entities", func(r chi.Router) {
 				r.Get("/", h.list)
 				r.With(requireAdmin).Post("/", h.create)

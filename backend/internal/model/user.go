@@ -61,3 +61,20 @@ type LoginInput struct {
 func (in *LoginInput) Normalize() {
 	in.Email = NormalizeEmail(in.Email)
 }
+
+// UserStats counts accounts and their activity for the admin dashboard.
+type UserStats struct {
+	Total int `json:"total"`
+	// ByRole has an entry for every role in Roles, including zero counts.
+	ByRole map[Role]int `json:"by_role"`
+	// WithActiveSession counts users (not sessions) with an unexpired session.
+	WithActiveSession int `json:"with_active_session"`
+	// Online counts users with an unexpired session seen within the online window.
+	Online int `json:"online"`
+}
+
+// AdminStats is the response of GET /api/admin/stats.
+type AdminStats struct {
+	Users               UserStats `json:"users"`
+	OnlineWindowMinutes int       `json:"online_window_minutes"`
+}

@@ -101,6 +101,9 @@ Tabel `sessions`:
 | `user_id` | TEXT | FK ke `users.id`, `ON DELETE CASCADE` |
 | `expires_at` | TEXT (RFC3339, UTC) | 7 hari setelah login; session kedaluwarsa dianggap tidak ada |
 | `created_at` | TEXT (RFC3339, UTC) | diisi oleh backend |
+| `last_seen_at` | TEXT (RFC3339, UTC), nullable | request terakhir dengan session ini; diisi saat login, diperbarui middleware **paling sering sekali per menit**. `NULL` untuk session lama dari sebelum kolom ini ada |
+
+Migrasi kolom: `CREATE TABLE IF NOT EXISTS` tidak menambah kolom ke tabel lama, jadi migrasi wajib mengecek `PRAGMA table_info(sessions)` dan menjalankan `ALTER TABLE ... ADD COLUMN` jika `last_seen_at` belum ada. DB yang sudah ada tidak boleh perlu dihapus.
 
 ### Enum — satu sumber kebenaran
 
@@ -147,6 +150,32 @@ Otorisasi **wajib** dilakukan di middleware backend. Frontend hanya menyembunyik
 | `/api/auth/*` | ✅ | ✅ | ✅ |
 | `GET /api/meta`, `GET /api/entities`, `GET /api/entities/{id}` | 401 | ✅ | ✅ |
 | `POST`, `PUT`, `PATCH .../location`, `DELETE` pada `/api/entities` | 401 | 403 | ✅ |
+| `GET /api/admin/stats` | 401 | 403 | ✅ |
+
+### Statistik admin
+
+`GET /api/admin/stats` → 200:
+
+```json
+{
+  "data": {
+    "users": {
+      "total": 12,
+      "by_role": { "user": 10, "admin": 2 },
+      "with_active_session": 5,
+      "online": 2
+    },
+    "online_window_minutes": 5
+  }
+}
+```
+
+- `total`: semua user terdaftar.
+- `by_role`: berisi **setiap** role di `model.Roles`, termasuk yang jumlahnya 0.
+- `with_active_session`: jumlah **user** (bukan session) yang punya minimal satu session belum kedaluwarsa.
+- `online`: jumlah user dengan session belum kedaluwarsa yang `last_seen_at`-nya dalam `online_window_minutes` terakhir.
+- Batas online (5 menit) adalah konstanta di backend dan dikirim di response, jadi frontend tidak meng-hardcode angkanya.
+- Statistik entitas **tidak** ada di endpoint ini; frontend menghitungnya dari `GET /api/entities` yang sudah boleh diakses kedua role.
 
 ### Format response
 
@@ -196,6 +225,15 @@ Frontend:
 - Tampilkan error per field langsung di bawah input
 - Petakan `fields` dari response 422 backend ke field form yang sesuai
 
+## Perilaku Dashboard
+
+- Header punya tab **Map | Dashboard** (state biasa, tanpa router). Pindah tab tidak menghapus pilihan atau form di map.
+- Kedua role melihat **ringkasan entitas**: total, jumlah per status (warna sama dengan marker), dan jumlah per type. Status/type yang jumlahnya 0 tetap ditampilkan, diambil dari `GET /api/meta`.
+- Hanya `admin` yang melihat **statistik user** dari `GET /api/admin/stats`. Frontend tidak memanggil endpoint ini untuk role `user`.
+- Statistik user di-refetch tiap 30 detik selama tab Dashboard terbuka dan tab browser terlihat.
+- **Heartbeat:** selama tab browser terlihat, frontend memanggil `GET /api/auth/me` tiap 2 menit supaya user yang membuka app tapi diam tetap terhitung online.
+- Label di UI harus jujur: "Online (5 menit terakhir)" dan "Sesi aktif", bukan "sedang login".
+
 ## Perilaku Map
 
 - Klik area kosong di map → buka form tambah dengan lat/lng terisi otomatis
@@ -241,6 +279,7 @@ Ekspektasi minimal:
 - Unit test validasi backend (input valid, tiap kasus tidak valid, nilai batas seperti lat = 90 / 90.0001)
 - Test handler untuk status code (201, 422, 404, 204)
 - Test auth: register/login/logout/me, email duplikat (422), kredensial salah (401), session kedaluwarsa (401), serta hak akses tiap role (401/403/sukses)
+- Test dashboard: migrasi menambah `last_seen_at` ke tabel `sessions` lama tanpa kehilangan data, `last_seen_at` diperbarui maksimal sekali per menit, perhitungan `stats` (user dengan beberapa session dihitung sekali, session kedaluwarsa dan di luar batas online tidak dihitung), hak akses `/api/admin/stats` (401/403/200)
 
 ## Konvensi Kode
 
@@ -283,6 +322,15 @@ Auth (branch `feat/auth`, setelah MVP):
 - [x] README: kontrak auth, env admin, alasan bcrypt, keterbatasan
 
 Di luar scope auth (catat sebagai keterbatasan): lupa/ganti password, kelola user (promote ke admin), rate limiting login.
+
+Dashboard (branch `feat/dashboard`, setelah auth):
+- [ ] Backend: kolom `last_seen_at` + migrasi untuk DB lama, update di middleware (maks. sekali per menit) + test
+- [ ] Backend: `GET /api/admin/stats` (admin saja) + test
+- [ ] Frontend: tab Map | Dashboard, ringkasan entitas untuk kedua role
+- [ ] Frontend: statistik user untuk admin, heartbeat `/auth/me`
+- [ ] README: endpoint stats, arti "online", keterbatasan
+
+Di luar scope dashboard (catat sebagai keterbatasan): status online realtime (WebSocket), daftar nama user yang online, grafik/riwayat aktivitas.
 
 ## Aturan untuk AI Agent
 

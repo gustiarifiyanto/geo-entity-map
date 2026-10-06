@@ -51,29 +51,96 @@ func (r *UserRepository) UserByEmail(ctx context.Context, email string) (model.U
 }
 
 // CreateSession stores a session for userID under the hash of its token.
+// Logging in counts as being seen.
 func (r *UserRepository) CreateSession(ctx context.Context, tokenHash, userID string, createdAt, expiresAt time.Time) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)`,
-		tokenHash, userID, formatTime(expiresAt), formatTime(createdAt))
+		INSERT INTO sessions (token_hash, user_id, expires_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)`,
+		tokenHash, userID, formatTime(expiresAt), formatTime(createdAt), formatTime(createdAt))
 	if err != nil {
 		return fmt.Errorf("insert session: %w", err)
 	}
 	return nil
 }
 
-// UserBySession returns the owner of an unexpired session, or model.ErrUnauthenticated.
-func (r *UserRepository) UserBySession(ctx context.Context, tokenHash string, now time.Time) (model.User, error) {
+// UserBySession returns the owner of an unexpired session and when the session
+// was last seen (zero if never recorded), or model.ErrUnauthenticated.
+func (r *UserRepository) UserBySession(ctx context.Context, tokenHash string, now time.Time) (model.User, time.Time, error) {
 	// RFC3339 UTC timestamps of equal precision sort correctly as strings.
 	row := r.db.QueryRowContext(ctx, `
-		SELECT u.id, u.email, u.role, u.password_hash, u.created_at
+		SELECT u.id, u.email, u.role, u.password_hash, u.created_at, s.last_seen_at
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = ? AND s.expires_at > ?`,
 		tokenHash, formatTime(now))
-	u, err := scanUser(row)
+
+	var (
+		u           model.User
+		created     string
+		lastSeenRaw sql.NullString
+		lastSeen    time.Time
+	)
+	err := row.Scan(&u.ID, &u.Email, &u.Role, &u.PasswordHash, &created, &lastSeenRaw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return model.User{}, model.ErrUnauthenticated
+		return model.User{}, time.Time{}, model.ErrUnauthenticated
 	}
-	return u, err
+	if err != nil {
+		return model.User{}, time.Time{}, fmt.Errorf("scan session user: %w", err)
+	}
+	if u.CreatedAt, err = time.Parse(time.RFC3339, created); err != nil {
+		return model.User{}, time.Time{}, fmt.Errorf("parse created_at of user %s: %w", u.ID, err)
+	}
+	if lastSeenRaw.Valid {
+		if lastSeen, err = time.Parse(time.RFC3339, lastSeenRaw.String); err != nil {
+			return model.User{}, time.Time{}, fmt.Errorf("parse last_seen_at of session: %w", err)
+		}
+	}
+	return u, lastSeen, nil
+}
+
+// TouchSession records that a session was used at seenAt.
+func (r *UserRepository) TouchSession(ctx context.Context, tokenHash string, seenAt time.Time) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?`,
+		formatTime(seenAt), tokenHash)
+	if err != nil {
+		return fmt.Errorf("touch session: %w", err)
+	}
+	return nil
+}
+
+// UserStats counts users by role, and the distinct users with an unexpired
+// session (all of them, and those seen at or after onlineSince).
+// ByRole only contains roles that have users.
+func (r *UserRepository) UserStats(ctx context.Context, now, onlineSince time.Time) (model.UserStats, error) {
+	stats := model.UserStats{ByRole: map[model.Role]int{}}
+	err := r.db.QueryRowContext(ctx, `
+		SELECT
+			(SELECT COUNT(*) FROM users),
+			(SELECT COUNT(DISTINCT user_id) FROM sessions WHERE expires_at > ?1),
+			(SELECT COUNT(DISTINCT user_id) FROM sessions WHERE expires_at > ?1 AND last_seen_at >= ?2)`,
+		formatTime(now), formatTime(onlineSince),
+	).Scan(&stats.Total, &stats.WithActiveSession, &stats.Online)
+	if err != nil {
+		return model.UserStats{}, fmt.Errorf("count users and sessions: %w", err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, `SELECT role, COUNT(*) FROM users GROUP BY role`)
+	if err != nil {
+		return model.UserStats{}, fmt.Errorf("count users by role: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			role model.Role
+			n    int
+		)
+		if err := rows.Scan(&role, &n); err != nil {
+			return model.UserStats{}, fmt.Errorf("scan role count: %w", err)
+		}
+		stats.ByRole[role] = n
+	}
+	if err := rows.Err(); err != nil {
+		return model.UserStats{}, fmt.Errorf("iterate role counts: %w", err)
+	}
+	return stats, nil
 }
 
 // DeleteSession removes a session. Deleting an unknown session is not an error.

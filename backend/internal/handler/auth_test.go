@@ -236,6 +236,7 @@ func TestAccessControl(t *testing.T) {
 		{http.MethodPut, "/api/entities/" + id, validBody, http.StatusOK, false},
 		{http.MethodPatch, "/api/entities/" + id + "/location", `{"latitude": 1, "longitude": 2}`, http.StatusOK, false},
 		{http.MethodDelete, "/api/entities/" + id, "", http.StatusNoContent, false},
+		{http.MethodGet, "/api/admin/stats", "", http.StatusOK, false},
 	}
 	for _, rt := range routes {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
@@ -285,5 +286,47 @@ func TestEnsureAdmin(t *testing.T) {
 	}
 	if created || u.Role != model.RoleUser {
 		t.Errorf("EnsureAdmin on existing user: created = %v, user = %+v", created, u)
+	}
+}
+
+func TestAdminStats(t *testing.T) {
+	app := newApp(t)
+	admin := app.login(t, adminEmail, adminPassword)
+	register(t, app, "budi@example.com", "rahasia123")
+
+	rec := do(t, app.router, http.MethodGet, "/api/admin/stats", "", admin)
+	expectStatus(t, rec, http.StatusOK)
+	got := decode[struct{ Data model.AdminStats }](t, rec).Data
+
+	// Both accounts just logged in, so both are online.
+	want := model.AdminStats{
+		Users: model.UserStats{
+			Total:             2,
+			ByRole:            map[model.Role]int{model.RoleUser: 1, model.RoleAdmin: 1},
+			WithActiveSession: 2,
+			Online:            2,
+		},
+		OnlineWindowMinutes: 5,
+	}
+	if got.Users.Total != want.Users.Total || got.Users.WithActiveSession != want.Users.WithActiveSession ||
+		got.Users.Online != want.Users.Online || got.OnlineWindowMinutes != want.OnlineWindowMinutes ||
+		!maps.Equal(got.Users.ByRole, want.Users.ByRole) {
+		t.Errorf("stats = %+v, want %+v", got, want)
+	}
+}
+
+func TestAdminStatsListsEveryRole(t *testing.T) {
+	app := newApp(t)
+	// Only the admin exists, but by_role must still list "user" with 0.
+	rec := do(t, app.router, http.MethodGet, "/api/admin/stats", "", app.login(t, adminEmail, adminPassword))
+	expectStatus(t, rec, http.StatusOK)
+	got := decode[struct{ Data model.AdminStats }](t, rec).Data
+	for _, r := range model.Roles {
+		if _, ok := got.Users.ByRole[r]; !ok {
+			t.Errorf("by_role is missing %q: %v", r, got.Users.ByRole)
+		}
+	}
+	if got.Users.ByRole[model.RoleUser] != 0 {
+		t.Errorf("by_role[user] = %d, want 0", got.Users.ByRole[model.RoleUser])
 	}
 }

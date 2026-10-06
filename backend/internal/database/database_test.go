@@ -138,6 +138,56 @@ func TestDeletingUserDeletesSessions(t *testing.T) {
 	}
 }
 
+// The users and sessions tables as they were before sessions.last_seen_at.
+const schemaBeforeLastSeen = `
+CREATE TABLE users (
+	id            TEXT PRIMARY KEY,
+	email         TEXT NOT NULL UNIQUE,
+	password_hash TEXT NOT NULL,
+	role          TEXT NOT NULL CHECK (role IN ('user', 'admin')),
+	created_at    TEXT NOT NULL
+);
+CREATE TABLE sessions (
+	token_hash TEXT PRIMARY KEY,
+	user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	expires_at TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+INSERT INTO users VALUES ('u1', 'budi@example.com', 'hash', 'user', 'now');
+INSERT INTO sessions VALUES ('t1', 'u1', 'later', 'now');
+`
+
+func TestMigrateAddsLastSeenToExistingSessions(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, filepath.Join(t.TempDir(), "old.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.Exec(schemaBeforeLastSeen); err != nil {
+		t.Fatalf("create old schema: %v", err)
+	}
+
+	// Twice: the second run must find the column and do nothing.
+	for i := range 2 {
+		if err := Migrate(ctx, db); err != nil {
+			t.Fatalf("Migrate run %d: %v", i+1, err)
+		}
+	}
+
+	var (
+		userID   string
+		lastSeen sql.NullString
+	)
+	err = db.QueryRow(`SELECT user_id, last_seen_at FROM sessions WHERE token_hash = 't1'`).Scan(&userID, &lastSeen)
+	if err != nil {
+		t.Fatalf("existing session after migration: %v", err)
+	}
+	if userID != "u1" || lastSeen.Valid {
+		t.Errorf("session = (%q, %v), want the old row with last_seen_at NULL", userID, lastSeen)
+	}
+}
+
 func TestSchemaRejectsOutOfRangeCoordinates(t *testing.T) {
 	db := openTestDB(t)
 	_, err := db.Exec(`INSERT INTO entities
