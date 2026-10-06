@@ -7,9 +7,11 @@ interface EntityDetailPanelProps {
   onClose: () => void
   onEdit?: () => void
   onDelete?: () => void
+  /** Whether the user may drag the pin; only then is the drag hint shown. */
+  movable?: boolean
 }
 
-export function EntityDetailPanel({ entity, onClose, onEdit, onDelete }: EntityDetailPanelProps) {
+export function EntityDetailPanel({ entity, onClose, onEdit, onDelete, movable }: EntityDetailPanelProps) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -54,7 +56,7 @@ export function EntityDetailPanel({ entity, onClose, onEdit, onDelete }: EntityD
           <span className="font-mono">
             {entity.latitude.toFixed(6)}, {entity.longitude.toFixed(6)}
           </span>
-          <p className="mt-1 text-xs text-gray-500">Drag the highlighted pin on the map to move it.</p>
+          {movable && <p className="mt-1 text-xs text-gray-500">Drag the highlighted pin on the map to move it.</p>}
         </Field>
         <Field label="Description">
           {entity.description || <span className="text-gray-400">No description</span>}

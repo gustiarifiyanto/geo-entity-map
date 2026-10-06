@@ -8,6 +8,7 @@ import {
   type EntityFormOutput,
   type EntityFormValues,
 } from '../../schemas/entity'
+import { inputClass } from '../../components/formStyles'
 import type { EntityInput, Meta } from '../../types/entity'
 import { formatLabel } from './labels'
 import { applyServerError } from './serverErrors'
@@ -24,11 +25,6 @@ interface EntityFormProps {
   onSubmit: (input: EntityInput) => Promise<void>
   onCancel: () => void
 }
-
-const inputClass =
-  'block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-xs ' +
-  'focus:border-gray-900 focus:ring-1 focus:ring-gray-900 focus:outline-none ' +
-  'aria-invalid:border-red-500 aria-invalid:focus:ring-red-500 disabled:bg-gray-50'
 
 export function EntityForm({
   meta,
@@ -53,7 +49,11 @@ export function EntityForm({
     resolver: zodResolver(schema),
     // Read once on mount: later prop changes never reset what the user typed.
     defaultValues,
-    mode: 'onTouched',
+    // Validate on submit only: the name field is autofocused, so validating on
+    // blur would show "is required" as soon as the user clicks the map to pick
+    // a location. After the first submit, errors update as the user types.
+    mode: 'onSubmit',
+    reValidateMode: 'onChange',
   })
 
   useEffect(() => {

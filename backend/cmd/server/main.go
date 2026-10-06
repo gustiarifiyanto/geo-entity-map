@@ -8,26 +8,40 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/database"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/handler"
+	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/model"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/repository"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/service"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/validation"
 )
 
 type config struct {
-	port   string
-	dbPath string
+	port          string
+	dbPath        string
+	cookieSecure  bool
+	adminEmail    string
+	adminPassword string
 }
 
-func loadConfig() config {
-	return config{
-		port:   getenv("PORT", "8080"),
-		dbPath: getenv("DB_PATH", "./data/app.db"),
+func loadConfig() (config, error) {
+	secure, err := strconv.ParseBool(getenv("COOKIE_SECURE", "false"))
+	if err != nil {
+		return config{}, fmt.Errorf("COOKIE_SECURE must be true or false: %w", err)
 	}
+	return config{
+		port:          getenv("PORT", "8080"),
+		dbPath:        getenv("DB_PATH", "./data/app.db"),
+		cookieSecure:  secure,
+		adminEmail:    os.Getenv("ADMIN_EMAIL"),
+		adminPassword: os.Getenv("ADMIN_PASSWORD"),
+	}, nil
 }
 
 func getenv(key, fallback string) string {
@@ -45,7 +59,10 @@ func main() {
 }
 
 func run() error {
-	cfg := loadConfig()
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -67,11 +84,18 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	svc := service.NewEntityService(repository.NewEntityRepository(db))
+	entities := service.NewEntityService(repository.NewEntityRepository(db))
+	auth, err := service.NewAuthService(repository.NewUserRepository(db), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	if err := seedAdmin(ctx, cfg, auth, val); err != nil {
+		return err
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.port,
-		Handler:           handler.NewRouter(svc, val),
+		Handler:           handler.NewRouter(entities, auth, val, handler.Options{SecureCookie: cfg.cookieSecure}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -98,6 +122,43 @@ func run() error {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown: %w", err)
+	}
+	return nil
+}
+
+// seedAdmin creates the first admin from ADMIN_EMAIL and ADMIN_PASSWORD.
+// Without them the server still runs, but nobody can change entities.
+func seedAdmin(ctx context.Context, cfg config, auth *service.AuthService, val *validation.Validator) error {
+	if cfg.adminEmail == "" && cfg.adminPassword == "" {
+		slog.Warn("ADMIN_EMAIL and ADMIN_PASSWORD are not set: no admin account, entities are read-only")
+		return nil
+	}
+
+	if cfg.adminEmail == "" || cfg.adminPassword == "" {
+		return errors.New("ADMIN_EMAIL and ADMIN_PASSWORD must be set together (only one of them is set)")
+	}
+
+	in := model.RegisterInput{Email: cfg.adminEmail, Password: cfg.adminPassword}
+	fields, err := val.Register(&in)
+	if err != nil {
+		return err
+	}
+	if fields != nil {
+		// Report the rule that failed, never the password itself.
+		return fmt.Errorf("invalid ADMIN_EMAIL/ADMIN_PASSWORD: %v", fields)
+	}
+
+	u, created, err := auth.EnsureAdmin(ctx, in)
+	if err != nil {
+		return fmt.Errorf("seed admin: %w", err)
+	}
+	switch {
+	case created:
+		slog.Info("admin account created", "email", u.Email)
+	case u.Role != model.RoleAdmin:
+		slog.Warn("ADMIN_EMAIL is already registered as a non-admin user; it was not promoted", "email", u.Email)
+	default:
+		slog.Info("admin account already exists", "email", u.Email)
 	}
 	return nil
 }

@@ -31,7 +31,7 @@ func (h *entityHandler) list(w http.ResponseWriter, r *http.Request) {
 		Type:   model.EntityType(q.Get("type")),
 		Status: model.EntityStatus(q.Get("status")),
 	}
-	if !h.valid(w, r, func() (validation.FieldErrors, error) { return h.val.Filter(&f) }) {
+	if !validInput(w, r, func() (validation.FieldErrors, error) { return h.val.Filter(&f) }) {
 		return
 	}
 
@@ -57,7 +57,7 @@ func (h *entityHandler) create(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	if !h.valid(w, r, func() (validation.FieldErrors, error) { return h.val.Entity(&in) }) {
+	if !validInput(w, r, func() (validation.FieldErrors, error) { return h.val.Entity(&in) }) {
 		return
 	}
 
@@ -75,7 +75,7 @@ func (h *entityHandler) update(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	if !h.valid(w, r, func() (validation.FieldErrors, error) { return h.val.Entity(&in) }) {
+	if !validInput(w, r, func() (validation.FieldErrors, error) { return h.val.Entity(&in) }) {
 		return
 	}
 
@@ -92,7 +92,7 @@ func (h *entityHandler) updateLocation(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	if !h.valid(w, r, func() (validation.FieldErrors, error) { return h.val.Location(&in) }) {
+	if !validInput(w, r, func() (validation.FieldErrors, error) { return h.val.Location(&in) }) {
 		return
 	}
 
@@ -112,8 +112,8 @@ func (h *entityHandler) delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// valid runs a validation and writes a 422 (or 500) response when it fails.
-func (h *entityHandler) valid(w http.ResponseWriter, r *http.Request, validate func() (validation.FieldErrors, error)) bool {
+// validInput runs a validation and writes a 422 (or 500) response when it fails.
+func validInput(w http.ResponseWriter, r *http.Request, validate func() (validation.FieldErrors, error)) bool {
 	fields, err := validate()
 	if err != nil {
 		writeServiceError(w, r, err)

@@ -36,7 +36,11 @@ function isErrorBody(value: unknown): value is ErrorBody {
 
 function fallbackMessage(status: number, code: string): string {
   if (status === 422) return 'Please fix the highlighted fields.'
+  if (status === 401) return 'Please log in again.'
+  if (status === 403) return 'You do not have permission to do that.'
   if (status === 404) return 'The entity was not found. It may have been deleted.'
+  // The Vite dev proxy answers 502/503/504 when the backend is not running.
+  if (status >= 502 && status <= 504) return 'Cannot reach the server. Is the backend running?'
   if (status >= 500) return 'Something went wrong on the server. Please try again.'
   return `Request failed (${code}).`
 }

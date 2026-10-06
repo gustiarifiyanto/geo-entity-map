@@ -1,11 +1,14 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import { useToast } from './components/toast/context'
+import { AuthScreen } from './features/auth/AuthScreen'
+import { useLogout, useMe } from './features/auth/hooks'
 import { DeleteEntityDialog } from './features/entities/DeleteEntityDialog'
 import { EntityDetailPanel } from './features/entities/EntityDetailPanel'
 import { CreateEntityPanel, EditEntityPanel } from './features/entities/EntityFormPanels'
 import { EntityMap } from './features/entities/EntityMap'
 import { MapHeader } from './features/entities/MapHeader'
 import { useEntities, useMeta, useUpdateEntityLocation } from './features/entities/hooks'
+import { ADMIN_ROLE, type User } from './types/auth'
 import type { Entity } from './types/entity'
 
 /** What the side panel shows. Only UI state lives here; entities come from React Query. */
@@ -18,6 +21,33 @@ type Panel =
 const NO_PANEL: Panel = { kind: 'none' }
 
 function App() {
+  const me = useMe()
+
+  if (me.isPending) {
+    return <CenteredMessage>Loading…</CenteredMessage>
+  }
+  if (me.isError) {
+    return (
+      <CenteredMessage>
+        <p className="text-red-700">{me.error.message}</p>
+        <button type="button" onClick={() => void me.refetch()} className="mt-2 font-medium underline">
+          Retry
+        </button>
+      </CenteredMessage>
+    )
+  }
+  // key: a different account starts with a fresh map state.
+  return me.data ? <MapScreen key={me.data.id} user={me.data} /> : <AuthScreen />
+}
+
+function CenteredMessage({ children }: { children: ReactNode }) {
+  return <div className="flex h-full flex-col items-center justify-center text-sm text-gray-500">{children}</div>
+}
+
+/** The map. Only admins can add, edit, move or delete; other roles only view. */
+function MapScreen({ user }: { user: User }) {
+  const canManage = user.role === ADMIN_ROLE
+  const logout = useLogout()
   const meta = useMeta()
   const entities = useEntities()
   const [panel, setPanel] = useState<Panel>(NO_PANEL)
@@ -35,12 +65,13 @@ function App() {
 
   const handleMapClick = useCallback(
     (latitude: number, longitude: number) => {
+      // Viewers cannot add entities, so the click does nothing for them.
       // While editing, ignore map clicks so unsaved changes are not lost.
       // Otherwise start (or move) a new entity at the clicked point.
-      if (!meta.data) return
+      if (!canManage || !meta.data) return
       setPanel((current) => (current.kind === 'edit' ? current : { kind: 'create', latitude, longitude }))
     },
-    [meta.data],
+    [canManage, meta.data],
   )
 
   const handleSelect = useCallback(
@@ -87,7 +118,7 @@ function App() {
         selectedId={selectedId}
         onSelect={handleSelect}
         onMapClick={handleMapClick}
-        markersDraggable={panel.kind === 'view'}
+        markersDraggable={canManage && panel.kind === 'view'}
         onMove={handleMove}
         draft={panel.kind === 'create' ? panel : null}
         onDraftMove={handleMapClick}
@@ -95,7 +126,18 @@ function App() {
 
       <div className="pointer-events-none absolute inset-x-3 top-3 z-[1000] flex flex-col items-start gap-2">
         <div className="pointer-events-auto">
-          <MapHeader entityCount={entities.data?.length} statuses={meta.data?.statuses ?? []} />
+          <MapHeader
+            entityCount={entities.data?.length}
+            statuses={meta.data?.statuses ?? []}
+            user={user}
+            canManage={canManage}
+            onLogout={() =>
+              logout.mutate(undefined, {
+                onError: (err) => toast.error(`Could not log out: ${err.message}`),
+              })
+            }
+            loggingOut={logout.isPending}
+          />
         </div>
         {error && (
           <div
@@ -123,8 +165,9 @@ function App() {
             <EntityDetailPanel
               entity={selected}
               onClose={closePanel}
-              onEdit={() => setPanel({ kind: 'edit', id: selected.id })}
-              onDelete={() => setDeleteTarget(selected)}
+              onEdit={canManage ? () => setPanel({ kind: 'edit', id: selected.id }) : undefined}
+              onDelete={canManage ? () => setDeleteTarget(selected) : undefined}
+              movable={canManage}
             />
           )}
           {panel.kind === 'create' && meta.data && (

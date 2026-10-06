@@ -206,3 +206,107 @@ func TestLocation(t *testing.T) {
 		})
 	}
 }
+
+func TestRegister(t *testing.T) {
+	tests := []struct {
+		name string
+		in   model.RegisterInput
+		want FieldErrors
+	}{
+		{"valid", model.RegisterInput{Email: "budi@example.com", Password: "rahasia123"}, nil},
+		{"email is trimmed and lowercased", model.RegisterInput{Email: "  Budi@Example.COM ", Password: "rahasia123"}, nil},
+		{"both missing", model.RegisterInput{}, FieldErrors{
+			"email":    "is required",
+			"password": "is required",
+		}},
+		{"email only whitespace", model.RegisterInput{Email: "   ", Password: "rahasia123"}, FieldErrors{
+			"email": "is required",
+		}},
+		{"email without @", model.RegisterInput{Email: "budi.example.com", Password: "rahasia123"}, FieldErrors{
+			"email": "must be a valid email address",
+		}},
+		{"email 254 chars", model.RegisterInput{Email: emailOfLength(254), Password: "rahasia123"}, nil},
+		{"email 255 chars", model.RegisterInput{Email: emailOfLength(255), Password: "rahasia123"}, FieldErrors{
+			"email": "must be at most 254 characters",
+		}},
+		{"password 7 chars", model.RegisterInput{Email: "budi@example.com", Password: "1234567"}, FieldErrors{
+			"password": "must be at least 8 characters",
+		}},
+		{"password 8 chars", model.RegisterInput{Email: "budi@example.com", Password: "12345678"}, nil},
+		{"password of spaces is kept", model.RegisterInput{Email: "budi@example.com", Password: "        "}, nil},
+		{"password 72 bytes", model.RegisterInput{Email: "budi@example.com", Password: strings.Repeat("a", 72)}, nil},
+		{"password 73 bytes", model.RegisterInput{Email: "budi@example.com", Password: strings.Repeat("a", 73)}, FieldErrors{
+			"password": "must be at most 72 bytes",
+		}},
+		{"password 37 multibyte chars is 74 bytes", model.RegisterInput{Email: "budi@example.com", Password: strings.Repeat("é", 37)}, FieldErrors{
+			"password": "must be at most 72 bytes",
+		}},
+	}
+
+	v := newValidator(t)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := v.Register(&tc.in)
+			if err != nil {
+				t.Fatalf("Register: unexpected error: %v", err)
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("Register() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRegisterNormalizes(t *testing.T) {
+	in := model.RegisterInput{Email: "  Budi@Example.COM ", Password: "  rahasia  "}
+	if _, err := newValidator(t).Register(&in); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if in.Email != "budi@example.com" {
+		t.Errorf("Email = %q, want trimmed and lowercased", in.Email)
+	}
+	if in.Password != "  rahasia  " {
+		t.Errorf("Password = %q, want it unchanged", in.Password)
+	}
+}
+
+func TestLogin(t *testing.T) {
+	tests := []struct {
+		name string
+		in   model.LoginInput
+		want FieldErrors
+	}{
+		{"valid", model.LoginInput{Email: "budi@example.com", Password: "rahasia123"}, nil},
+		// Login only checks presence: a short password is a wrong password (401), not a 422.
+		{"short password", model.LoginInput{Email: "budi@example.com", Password: "x"}, nil},
+		{"both missing", model.LoginInput{}, FieldErrors{
+			"email":    "is required",
+			"password": "is required",
+		}},
+		{"email only whitespace", model.LoginInput{Email: " ", Password: "x"}, FieldErrors{
+			"email": "is required",
+		}},
+	}
+
+	v := newValidator(t)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := v.Login(&tc.in)
+			if err != nil {
+				t.Fatalf("Login: unexpected error: %v", err)
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("Login() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// emailOfLength builds a valid email of exactly n characters (198 <= n <= 260),
+// keeping every domain label within the 63-character DNS limit.
+func emailOfLength(n int) string {
+	local := strings.Repeat("a", 64)
+	b, c := strings.Repeat("b", 63), strings.Repeat("c", 63)
+	fixed := len(local) + len("@") + len(b) + len(".") + len(c) + len(".") + len(".com")
+	return local + "@" + b + "." + c + "." + strings.Repeat("d", n-fixed) + ".com"
+}

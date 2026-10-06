@@ -2,6 +2,7 @@ package handler_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"maps"
@@ -10,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/database"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/handler"
@@ -37,7 +40,19 @@ type errorResponse struct {
 	Fields  map[string]string `json:"fields"`
 }
 
-func newServer(t *testing.T) http.Handler {
+const (
+	adminEmail    = "admin@example.com"
+	adminPassword = "admin-password"
+)
+
+// testApp is a router backed by a fresh database that already has an admin.
+type testApp struct {
+	router http.Handler
+	auth   *service.AuthService
+	db     *sql.DB
+}
+
+func newApp(t *testing.T) testApp {
 	t.Helper()
 	ctx := context.Background()
 	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "test.db"))
@@ -52,10 +67,43 @@ func newServer(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatalf("validator: %v", err)
 	}
-	return handler.NewRouter(service.NewEntityService(repository.NewEntityRepository(db)), val)
+	auth, err := service.NewAuthService(repository.NewUserRepository(db), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("auth service: %v", err)
+	}
+	if _, _, err := auth.EnsureAdmin(ctx, model.RegisterInput{Email: adminEmail, Password: adminPassword}); err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+	entities := service.NewEntityService(repository.NewEntityRepository(db))
+	return testApp{router: handler.NewRouter(entities, auth, val, handler.Options{}), auth: auth, db: db}
 }
 
-func do(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {
+// login returns a session cookie for an existing account.
+func (a testApp) login(t *testing.T, email, password string) *http.Cookie {
+	t.Helper()
+	s, err := a.auth.Login(context.Background(), model.LoginInput{Email: email, Password: password})
+	if err != nil {
+		t.Fatalf("login %s: %v", email, err)
+	}
+	return &http.Cookie{Name: "session", Value: s.Token}
+}
+
+// newServer returns a router that sends requests without a session cookie
+// as the admin, so entity tests can focus on entity behavior. Access rules
+// are tested in auth_test.go against the bare router.
+func newServer(t *testing.T) http.Handler {
+	t.Helper()
+	app := newApp(t)
+	admin := app.login(t, adminEmail, adminPassword)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := r.Cookie("session"); err != nil {
+			r.AddCookie(admin)
+		}
+		app.router.ServeHTTP(w, r)
+	})
+}
+
+func do(t *testing.T, h http.Handler, method, path, body string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
 	t.Helper()
 	var r io.Reader
 	if body != "" {
@@ -63,6 +111,9 @@ func do(t *testing.T, h http.Handler, method, path, body string) *httptest.Respo
 	}
 	req := httptest.NewRequest(method, path, r)
 	req.Header.Set("Content-Type", "application/json")
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec

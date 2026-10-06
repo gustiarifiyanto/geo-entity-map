@@ -13,6 +13,7 @@ Fitur inti:
 - Mengubah entitas lewat form, dan mengubah lokasinya dengan drag marker
 - Menghapus entitas (dengan konfirmasi)
 - Validasi input di **kedua sisi**, frontend dan backend
+- Login/register dengan role `admin` (kelola entitas) dan `user` (hanya melihat)
 
 Ini adalah take-home test dengan deadline ketat. **Utamakan MVP yang rapi dan berjalan baik dibanding fitur tambahan.**
 
@@ -26,6 +27,8 @@ Ini adalah take-home test dengan deadline ketat. **Utamakan MVP yang rapi dan be
 | Driver SQLite | `modernc.org/sqlite` | Pure Go, **tanpa CGO** — JANGAN ganti ke `mattn/go-sqlite3` |
 | Akses DB | `database/sql` | Tanpa ORM; satu tabel tidak membutuhkannya |
 | Validasi backend | `go-playground/validator/v10` | Validasi struct berbasis tag |
+| Hash password | `golang.org/x/crypto/bcrypt` | Paket semi-resmi Go; JANGAN simpan password dalam bentuk lain |
+| Auth | Session di server + cookie HttpOnly | Bukan JWT; session bisa dicabut dengan menghapus baris di DB |
 | Frontend | React + Vite + TypeScript | Wajib sesuai soal tes; `strict: true` |
 | Map | Leaflet + `react-leaflet` + tile OpenStreetMap | Gratis, tanpa API key |
 | Server state | `@tanstack/react-query` | Caching, refetch otomatis setelah mutasi |
@@ -41,8 +44,8 @@ Jangan menambah dependency tanpa alasan yang jelas. Jika ada yang ditambahkan, t
 ├── backend/
 │   ├── cmd/server/main.go        # entrypoint: config, init DB, migrate, seed, router
 │   ├── internal/
-│   │   ├── model/                # struct Entity, enum (satu-satunya sumber kebenaran)
-│   │   ├── handler/              # HTTP handler: decode, validasi, response
+│   │   ├── model/                # struct Entity, User, enum (satu-satunya sumber kebenaran)
+│   │   ├── handler/              # HTTP handler + middleware auth: decode, validasi, response
 │   │   ├── service/              # logika bisnis
 │   │   ├── repository/           # query SQL
 │   │   ├── validation/           # setup validator + format error
@@ -52,6 +55,7 @@ Jangan menambah dependency tanpa alasan yang jelas. Jika ada yang ditambahkan, t
 │   ├── src/
 │   │   ├── api/                  # fetch client + fungsi API yang typed
 │   │   ├── components/           # komponen UI umum
+│   │   ├── features/auth/        # form login/register, hook user saat ini
 │   │   ├── features/entities/    # map, marker, form, detail panel, hooks
 │   │   ├── schemas/              # schema zod
 │   │   └── types/                # tipe TypeScript bersama
@@ -79,11 +83,31 @@ Tabel `entities`:
 | `created_at` | TEXT (RFC3339, UTC) | diisi oleh backend |
 | `updated_at` | TEXT (RFC3339, UTC) | diisi oleh backend |
 
+Tabel `users`:
+
+| Kolom | Tipe | Aturan |
+|---|---|---|
+| `id` | TEXT (UUID v4) | dibuat oleh backend |
+| `email` | TEXT UNIQUE | wajib, di-trim + lowercase, format email valid, maks. 254 karakter |
+| `password_hash` | TEXT | hash bcrypt; **tidak pernah** dikirim ke client |
+| `role` | TEXT | `user` atau `admin` (CHECK constraint) |
+| `created_at` | TEXT (RFC3339, UTC) | diisi oleh backend |
+
+Tabel `sessions`:
+
+| Kolom | Tipe | Aturan |
+|---|---|---|
+| `token_hash` | TEXT PK | SHA-256 (hex) dari token acak 32 byte; token mentah hanya ada di cookie |
+| `user_id` | TEXT | FK ke `users.id`, `ON DELETE CASCADE` |
+| `expires_at` | TEXT (RFC3339, UTC) | 7 hari setelah login; session kedaluwarsa dianggap tidak ada |
+| `created_at` | TEXT (RFC3339, UTC) | diisi oleh backend |
+
 ### Enum — satu sumber kebenaran
 
 Nilai yang diizinkan **hanya** didefinisikan di `backend/internal/model`:
 - `type`: `vehicle`, `iot_device`, `facility` (akan ada penambahan type nantinya)
 - `status`: `active`, `inactive`, `maintenance`
+- `role`: `user`, `admin` (tidak diekspos lewat `/api/meta`; register selalu membuat `user`)
 
 Frontend **tidak boleh** meng-hardcode daftar ini untuk dropdown. Frontend mengambilnya dari `GET /api/meta`. Menambah type baru cukup dengan mengubah daftar konstanta di Go. (Label/warna marker di frontend boleh punya fallback untuk nilai yang tidak dikenal.)
 
@@ -100,6 +124,29 @@ Base path: `/api`. Request dan response dalam format JSON.
 | PUT | `/api/entities/{id}` | Update penuh (semua field yang bisa diubah) | 200 |
 | PATCH | `/api/entities/{id}/location` | Update hanya `latitude` + `longitude` (drag marker) | 200 |
 | DELETE | `/api/entities/{id}` | Menghapus entitas | 204 |
+
+### Auth
+
+| Method | Path | Body | Sukses | Catatan |
+|---|---|---|---|---|
+| POST | `/api/auth/register` | `{ "email", "password" }` | 201 `{ "data": user }` | role selalu `user`; langsung login (cookie dipasang) |
+| POST | `/api/auth/login` | `{ "email", "password" }` | 200 `{ "data": user }` | cookie dipasang |
+| POST | `/api/auth/logout` | – | 204 | session dihapus, cookie dikosongkan; tetap 204 walau belum login |
+| GET | `/api/auth/me` | – | 200 `{ "data": user }` | 401 jika belum login |
+
+Objek user: `{ "id", "email", "role", "created_at" }`.
+
+Cookie `session`: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age` 7 hari. `Secure` diatur oleh env `COOKIE_SECURE` (default `false` untuk localhost).
+
+### Hak akses
+
+Otorisasi **wajib** dilakukan di middleware backend. Frontend hanya menyembunyikan kontrol, bukan pengaman.
+
+| Endpoint | Belum login | `user` | `admin` |
+|---|---|---|---|
+| `/api/auth/*` | ✅ | ✅ | ✅ |
+| `GET /api/meta`, `GET /api/entities`, `GET /api/entities/{id}` | 401 | ✅ | ✅ |
+| `POST`, `PUT`, `PATCH .../location`, `DELETE` pada `/api/entities` | 401 | 403 | ✅ |
 
 ### Format response
 
@@ -119,8 +166,13 @@ Error validasi — **422**:
 
 Error lainnya: `{ "error": "<kode>", "message": "<pesan yang mudah dibaca>" }`
 - 400 `invalid_json` — body rusak atau ada field yang tidak dikenal
+- 401 `unauthorized` — belum login, atau session tidak valid / kedaluwarsa
+- 401 `invalid_credentials` — email atau password salah (pesan dibuat umum, tidak membedakan email tidak terdaftar vs password salah)
+- 403 `forbidden` — sudah login tapi role tidak cukup
 - 404 `not_found` — entitas tidak ada / id tidak valid
 - 500 `internal_error` — jangan pernah membocorkan detail internal
+
+Email yang sudah terdaftar saat register → **422** dengan `fields.email: "is already registered"`.
 
 Key di dalam `fields` memakai nama field JSON (snake_case), supaya frontend bisa langsung memetakan error ke input form.
 
@@ -134,6 +186,9 @@ Backend:
 - Tolak koordinat `NaN`/`Inf`
 - Validasi `type`/`status` terhadap enum di model
 - `attributes` harus berupa objek JSON (bukan array/string/angka)
+- `email`: trim + lowercase, format email valid, maks. 254 karakter
+- `password` saat register: 8–72 karakter (72 = batas byte bcrypt; hitung dalam byte); **tidak di-trim**
+- `password` saat login: cukup wajib diisi (aturan panjang tidak dicek supaya tidak membocorkan info)
 - Jangan pernah berasumsi frontend sudah melakukan validasi
 
 Frontend:
@@ -171,7 +226,9 @@ npm run dev
 - Seed data hanya dimasukkan jika tabel masih kosong.
 - Vite mem-proxy `/api` ke backend, jadi tidak perlu setup CORS saat development.
 
-Konfigurasi lewat environment variable dengan nilai default: `PORT=8080`, `DB_PATH=./data/app.db`.
+Konfigurasi lewat environment variable dengan nilai default: `PORT=8080`, `DB_PATH=./data/app.db`, `COOKIE_SECURE=false`.
+
+Admin pertama: `ADMIN_EMAIL` + `ADMIN_PASSWORD`. Saat start, jika email tersebut belum terdaftar, backend membuat user ber-role `admin`. Jika env tidak diisi, server tetap jalan dan mencatat peringatan di log. Nilai ini **tidak boleh** di-commit ke repository.
 
 ## Testing
 
@@ -183,6 +240,7 @@ cd frontend && npm run typecheck && npm run lint
 Ekspektasi minimal:
 - Unit test validasi backend (input valid, tiap kasus tidak valid, nilai batas seperti lat = 90 / 90.0001)
 - Test handler untuk status code (201, 422, 404, 204)
+- Test auth: register/login/logout/me, email duplikat (422), kredensial salah (401), session kedaluwarsa (401), serta hak akses tiap role (401/403/sukses)
 
 ## Konvensi Kode
 
@@ -217,6 +275,14 @@ Nice to have (hanya setelah MVP selesai):
 - [ ] Sidebar daftar entitas yang tersinkron dengan map
 - [ ] Clustering marker
 - [ ] Update realtime (SSE/WebSocket)
+
+Auth (branch `feat/auth`, setelah MVP):
+- [ ] Backend: tabel users/sessions, register/login/logout/me, seed admin dari env
+- [ ] Backend: middleware 401/403 + test
+- [ ] Frontend: tampilan login/register, logout, sembunyikan kontrol kelola untuk role `user`
+- [ ] README: kontrak auth, env admin, alasan bcrypt, keterbatasan
+
+Di luar scope auth (catat sebagai keterbatasan): lupa/ganti password, kelola user (promote ke admin), rate limiting login.
 
 ## Aturan untuk AI Agent
 
