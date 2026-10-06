@@ -48,10 +48,12 @@ func TestEntityStatusValid(t *testing.T) {
 }
 
 func TestTypeCapabilities(t *testing.T) {
-	if !TypeFacility.Has(CapInstallation) {
-		t.Error("facility should have the installation capability")
+	for _, typ := range []EntityType{TypeFacility, TypeIoTDevice} {
+		if !typ.Has(CapInstallation) {
+			t.Errorf("%q should have the installation capability", typ)
+		}
 	}
-	for _, typ := range []EntityType{TypeVehicle, TypeIoTDevice, "unknown"} {
+	for _, typ := range []EntityType{TypeVehicle, "unknown"} {
 		if typ.Has(CapInstallation) {
 			t.Errorf("%q should not have the installation capability", typ)
 		}

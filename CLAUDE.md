@@ -117,7 +117,7 @@ Tabel `entity_photos`:
 
 File foto disimpan di `UPLOAD_DIR` (default `./data/uploads`), **bukan** di database. Nama file selalu dibuat server; nama asli dari user tidak pernah dipakai sebagai path. Menghapus entitas atau foto juga menghapus file-nya di disk.
 
-Tabel `facility_installations` (hanya untuk entitas yang type-nya punya kemampuan `installation`, saat ini `facility`):
+Tabel `facility_installations` (hanya untuk entitas yang type-nya punya kemampuan `installation`, saat ini `facility` dan `iot_device`; nama tabel tetap karena awalnya hanya untuk fasilitas):
 
 | Kolom | Tipe | Aturan |
 |---|---|---|
@@ -135,7 +135,7 @@ Nilai yang diizinkan **hanya** didefinisikan di `backend/internal/model`:
 - `type`: `vehicle`, `iot_device`, `facility` (akan ada penambahan type nantinya)
 - `status`: `active`, `inactive`, `maintenance`
 - `role`: `user`, `admin` (tidak diekspos lewat `/api/meta`; register selalu membuat `user`)
-- **Kemampuan per type** (`capabilities`): fitur khusus yang dimiliki type tertentu. Saat ini hanya `facility` → `installation`; nanti `iot_device` → `readings` dan `vehicle` → `tracking`. Dikirim lewat `GET /api/meta`, jadi frontend memeriksa `meta.capabilities[type]` dan **tidak** meng-hardcode "facility".
+- **Kemampuan per type** (`capabilities`): fitur khusus yang dimiliki type tertentu. Saat ini `facility` dan `iot_device` → `installation` (IoT ditambahkan atas keputusan developer); nanti `iot_device` juga → `readings`, dan `vehicle` → `tracking`. Dikirim lewat `GET /api/meta`, jadi frontend memeriksa `meta.capabilities[type]` dan **tidak** meng-hardcode "facility".
 - `installation_status` (dihitung, tidak disimpan): `scheduled` (mulai > hari ini), `in_progress` (belum selesai, hari ini ≤ target), `overdue` (belum selesai, hari ini > target), `completed_on_time` (selesai ≤ target), `completed_late` (selesai > target)
 
 Frontend **tidak boleh** meng-hardcode daftar ini untuk dropdown. Frontend mengambilnya dari `GET /api/meta`. Menambah type baru cukup dengan mengubah daftar konstanta di Go. (Label/warna marker di frontend boleh punya fallback untuk nilai yang tidak dikenal.)
@@ -162,7 +162,7 @@ Base path: `/api`. Request dan response dalam format JSON.
 | DELETE | `/api/entities/{id}/installation` | Menghapus data pemasangan | 204 |
 | GET | `/api/installations` | Semua data pemasangan (untuk dashboard), terlambat dulu | 200 |
 
-`GET /api/meta` kini juga mengirim `"capabilities": { "facility": ["installation"] }` (field tambahan, field lama tidak berubah).
+`GET /api/meta` kini juga mengirim `"capabilities": { "iot_device": ["installation"], "facility": ["installation"] }` (field tambahan, field lama tidak berubah).
 
 Objek installation:
 
@@ -306,7 +306,7 @@ Frontend:
 
 - Form New/Edit entity menampilkan bagian **Installation** hanya jika type yang dipilih punya kemampuan `installation` (dari `/api/meta`). Sama seperti foto, perubahan diproses saat Create/Save dan dibatalkan oleh Cancel. Jika type diganti ke type tanpa kemampuan itu, bagian tersebut disembunyikan dan tidak dikirim.
 - Panel detail (semua role) menampilkan badge status, tanggal, dan progress (`elapsed_days` / `planned_days`), plus "terlambat N hari" jika ada.
-- Dashboard (semua role): jumlah per status pemasangan dan daftar fasilitas yang `overdue`.
+- Dashboard (semua role): jumlah per status pemasangan dan daftar entitas (fasilitas maupun perangkat IoT) yang `overdue`.
 
 ## Perilaku Map
 

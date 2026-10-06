@@ -57,7 +57,8 @@ func TestMetaCapabilities(t *testing.T) {
 			Capabilities map[string][]string `json:"capabilities"`
 		}
 	}](t, rec).Data.Capabilities
-	if !slices.Equal(got["facility"], []string{"installation"}) || len(got) != len(model.TypeCapabilities) {
+	if !slices.Equal(got["facility"], []string{"installation"}) || !slices.Equal(got["iot_device"], []string{"installation"}) ||
+		len(got["vehicle"]) != 0 || len(got) != len(model.TypeCapabilities) {
 		t.Errorf("capabilities = %v", got)
 	}
 }
@@ -228,4 +229,19 @@ func TestInstallationAccessControl(t *testing.T) {
 	// The admin can.
 	expectStatus(t, do(t, app.router, http.MethodPut, path, body, admin), http.StatusOK)
 	expectStatus(t, do(t, app.router, http.MethodDelete, path, "", admin), http.StatusNoContent)
+}
+
+func TestInstallationForIoTDevice(t *testing.T) {
+	app := newApp(t)
+	admin := app.login(t, adminEmail, adminPassword)
+	body := `{"name": "Flood Sensor", "type": "iot_device", "status": "active", "latitude": -6.1, "longitude": 106.8}`
+	rec := do(t, app.router, http.MethodPost, "/api/entities", body, admin)
+	expectStatus(t, rec, http.StatusCreated)
+	path := "/api/entities/" + decodeEntity(t, rec).ID + "/installation"
+
+	rec = do(t, app.router, http.MethodPut, path, installationBody(day(-2), day(3), nil), admin)
+	expectStatus(t, rec, http.StatusOK)
+	if inst := decodeInstallation(t, rec.Body.Bytes()); inst.Status != model.InstallationInProgress {
+		t.Errorf("iot_device installation = %+v", inst)
+	}
 }
