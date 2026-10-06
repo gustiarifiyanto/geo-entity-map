@@ -14,4 +14,10 @@ var (
 	ErrInvalidCredentials = errors.New("invalid email or password")
 	// ErrUnauthenticated is returned when a session token is missing, unknown or expired.
 	ErrUnauthenticated = errors.New("not logged in")
+	// ErrPhotoNotFound is returned when a photo does not exist or its ID is malformed.
+	ErrPhotoNotFound = errors.New("photo not found")
+	// ErrUnsupportedPhoto is returned when an upload is not a JPEG, PNG or WebP image.
+	ErrUnsupportedPhoto = errors.New("unsupported photo type")
+	// ErrTooManyPhotos is returned when an entity already has MaxPhotosPerEntity photos.
+	ErrTooManyPhotos = errors.New("too many photos")
 )

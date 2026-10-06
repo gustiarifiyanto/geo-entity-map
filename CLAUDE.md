@@ -101,6 +101,21 @@ Tabel `sessions`:
 | `user_id` | TEXT | FK ke `users.id`, `ON DELETE CASCADE` |
 | `expires_at` | TEXT (RFC3339, UTC) | 7 hari setelah login; session kedaluwarsa dianggap tidak ada |
 | `created_at` | TEXT (RFC3339, UTC) | diisi oleh backend |
+| `last_seen_at` | TEXT (RFC3339, UTC), nullable | request terakhir dengan session ini; diisi saat login, diperbarui middleware **paling sering sekali per menit**. `NULL` untuk session lama dari sebelum kolom ini ada |
+
+Migrasi kolom: `CREATE TABLE IF NOT EXISTS` tidak menambah kolom ke tabel lama, jadi migrasi wajib mengecek `PRAGMA table_info(sessions)` dan menjalankan `ALTER TABLE ... ADD COLUMN` jika `last_seen_at` belum ada. DB yang sudah ada tidak boleh perlu dihapus.
+
+Tabel `entity_photos`:
+
+| Kolom | Tipe | Aturan |
+|---|---|---|
+| `id` | TEXT (UUID v4) | dibuat oleh backend; juga nama file di disk (`<id>.<ext>`) |
+| `entity_id` | TEXT | FK ke `entities.id`, `ON DELETE CASCADE` |
+| `content_type` | TEXT | `image/jpeg`, `image/png`, atau `image/webp`, hasil deteksi isi file |
+| `size_bytes` | INTEGER | ukuran file |
+| `created_at` | TEXT (RFC3339, UTC) | diisi oleh backend |
+
+File foto disimpan di `UPLOAD_DIR` (default `./data/uploads`), **bukan** di database. Nama file selalu dibuat server; nama asli dari user tidak pernah dipakai sebagai path. Menghapus entitas atau foto juga menghapus file-nya di disk.
 
 ### Enum — satu sumber kebenaran
 
@@ -124,6 +139,14 @@ Base path: `/api`. Request dan response dalam format JSON.
 | PUT | `/api/entities/{id}` | Update penuh (semua field yang bisa diubah) | 200 |
 | PATCH | `/api/entities/{id}/location` | Update hanya `latitude` + `longitude` (drag marker) | 200 |
 | DELETE | `/api/entities/{id}` | Menghapus entitas | 204 |
+| GET | `/api/entities/{id}/photos` | Daftar foto entitas, terlama dulu | 200 |
+| POST | `/api/entities/{id}/photos` | Upload satu foto (`multipart/form-data`, field `photo`) | 201 |
+| GET | `/api/photos/{photoId}` | File gambar (bukan JSON) | 200 |
+| DELETE | `/api/photos/{photoId}` | Menghapus foto | 204 |
+
+Objek foto: `{ "id", "entity_id", "url", "content_type", "size_bytes", "created_at" }`, dengan `url` = `/api/photos/{id}`. Bentuk objek entitas **tidak berubah**.
+
+`GET /api/photos/{photoId}` mengirim header `Content-Type` dari DB, `X-Content-Type-Options: nosniff`, dan `Cache-Control: private, max-age=86400` (foto tidak pernah diubah, hanya dihapus).
 
 ### Auth
 
@@ -147,6 +170,35 @@ Otorisasi **wajib** dilakukan di middleware backend. Frontend hanya menyembunyik
 | `/api/auth/*` | ✅ | ✅ | ✅ |
 | `GET /api/meta`, `GET /api/entities`, `GET /api/entities/{id}` | 401 | ✅ | ✅ |
 | `POST`, `PUT`, `PATCH .../location`, `DELETE` pada `/api/entities` | 401 | 403 | ✅ |
+| `GET /api/admin/stats` | 401 | 403 | ✅ |
+| `GET /api/entities/{id}/photos`, `GET /api/photos/{photoId}` | 401 | ✅ | ✅ |
+| `POST /api/entities/{id}/photos`, `DELETE /api/photos/{photoId}` | 401 | 403 | ✅ |
+
+### Statistik admin
+
+`GET /api/admin/stats` → 200:
+
+```json
+{
+  "data": {
+    "users": {
+      "total": 12,
+      "by_role": { "user": 10, "admin": 2 },
+      "with_active_session": 5,
+      "online": 2
+    },
+    "online_window_minutes": 5
+  }
+}
+```
+
+- `total`, `with_active_session`, dan `online` **hanya menghitung role `user`**. Admin adalah pembaca dashboard, jadi tidak ikut dihitung supaya angkanya tidak ambigu (keputusan developer).
+- `total`: user ber-role `user` yang terdaftar.
+- `by_role`: berisi **setiap** role di `model.Roles` (termasuk `admin`), termasuk yang jumlahnya 0.
+- `with_active_session`: jumlah **user** (bukan session) yang punya minimal satu session belum kedaluwarsa.
+- `online`: jumlah user dengan session belum kedaluwarsa yang `last_seen_at`-nya dalam `online_window_minutes` terakhir.
+- Batas online (5 menit) adalah konstanta di backend dan dikirim di response, jadi frontend tidak meng-hardcode angkanya.
+- Statistik entitas **tidak** ada di endpoint ini; frontend menghitungnya dari `GET /api/entities` yang sudah boleh diakses kedua role.
 
 ### Format response
 
@@ -174,6 +226,8 @@ Error lainnya: `{ "error": "<kode>", "message": "<pesan yang mudah dibaca>" }`
 
 Email yang sudah terdaftar saat register → **422** dengan `fields.email: "is already registered"`.
 
+Upload foto yang tidak valid → **422** di `fields.photo`: `"is required"`, `"must be a JPEG, PNG or WebP image"`, `"must be at most 5 MB"`, atau `"this entity already has the maximum of 5 photos"`. Body upload yang bukan `multipart/form-data` yang valid → **400 `invalid_request`** (kode baru, karena `invalid_json` tidak tepat untuk upload file). Entitas atau foto yang tidak ada → 404 `not_found`.
+
 Key di dalam `fields` memakai nama field JSON (snake_case), supaya frontend bisa langsung memetakan error ke input form.
 
 ## Aturan Validasi
@@ -189,12 +243,22 @@ Backend:
 - `email`: trim + lowercase, format email valid, maks. 254 karakter
 - `password` saat register: 8–72 karakter (72 = batas byte bcrypt; hitung dalam byte); **tidak di-trim**
 - `password` saat login: cukup wajib diisi (aturan panjang tidak dicek supaya tidak membocorkan info)
+- Foto: jenis file ditentukan dari **isi file** (`http.DetectContentType`), bukan dari ekstensi atau header `Content-Type` kiriman client; maks. 5 MB (`MaxBytesReader`); maks. 5 foto per entitas
 - Jangan pernah berasumsi frontend sudah melakukan validasi
 
 Frontend:
 - Schema zod di `src/schemas/` mengikuti aturan backend
 - Tampilkan error per field langsung di bawah input
 - Petakan `fields` dari response 422 backend ke field form yang sesuai
+
+## Perilaku Dashboard
+
+- Header punya tab **Map | Dashboard** (state biasa, tanpa router). Pindah tab tidak menghapus pilihan atau form di map.
+- Kedua role melihat **ringkasan entitas**: total, jumlah per status (warna sama dengan marker), dan jumlah per type. Status/type yang jumlahnya 0 tetap ditampilkan, diambil dari `GET /api/meta`.
+- Hanya `admin` yang melihat **statistik user** dari `GET /api/admin/stats`. Frontend tidak memanggil endpoint ini untuk role `user`.
+- Statistik user di-refetch tiap 30 detik selama tab Dashboard terbuka dan tab browser terlihat.
+- **Heartbeat:** selama tab browser terlihat, frontend memanggil `GET /api/auth/me` tiap 2 menit supaya user yang membuka app tapi diam tetap terhitung online.
+- Label di UI harus jujur (UI berbahasa Inggris): "Online (last 5 min)" dan "With an active session", bukan "logged in now".
 
 ## Perilaku Map
 
@@ -226,7 +290,7 @@ npm run dev
 - Seed data hanya dimasukkan jika tabel masih kosong.
 - Vite mem-proxy `/api` ke backend, jadi tidak perlu setup CORS saat development.
 
-Konfigurasi lewat environment variable dengan nilai default: `PORT=8080`, `DB_PATH=./data/app.db`, `COOKIE_SECURE=false`.
+Konfigurasi lewat environment variable dengan nilai default: `PORT=8080`, `DB_PATH=./data/app.db`, `COOKIE_SECURE=false`, `UPLOAD_DIR=./data/uploads`.
 
 Admin pertama: `ADMIN_EMAIL` + `ADMIN_PASSWORD`. Saat start, jika email tersebut belum terdaftar, backend membuat user ber-role `admin`. Jika env tidak diisi, server tetap jalan dan mencatat peringatan di log. Nilai ini **tidak boleh** di-commit ke repository.
 
@@ -241,6 +305,8 @@ Ekspektasi minimal:
 - Unit test validasi backend (input valid, tiap kasus tidak valid, nilai batas seperti lat = 90 / 90.0001)
 - Test handler untuk status code (201, 422, 404, 204)
 - Test auth: register/login/logout/me, email duplikat (422), kredensial salah (401), session kedaluwarsa (401), serta hak akses tiap role (401/403/sukses)
+- Test dashboard: migrasi menambah `last_seen_at` ke tabel `sessions` lama tanpa kehilangan data, `last_seen_at` diperbarui maksimal sekali per menit, perhitungan `stats` (user dengan beberapa session dihitung sekali, session kedaluwarsa dan di luar batas online tidak dihitung), hak akses `/api/admin/stats` (401/403/200)
+- Test foto: upload JPEG/PNG/WebP (201), file teks yang diberi nama `.jpg` (422), 5 MB vs 5 MB + 1 byte, foto ke-6 (422), entitas tidak ada (404), file ikut terhapus saat foto/entitas dihapus, header `nosniff` saat file diambil, hak akses tiap role
 
 ## Konvensi Kode
 
@@ -283,6 +349,24 @@ Auth (branch `feat/auth`, setelah MVP):
 - [x] README: kontrak auth, env admin, alasan bcrypt, keterbatasan
 
 Di luar scope auth (catat sebagai keterbatasan): lupa/ganti password, kelola user (promote ke admin), rate limiting login.
+
+Dashboard (branch `feat/dashboard`, setelah auth):
+- [x] Backend: kolom `last_seen_at` + migrasi untuk DB lama, update di middleware (maks. sekali per menit) + test
+- [x] Backend: `GET /api/admin/stats` (admin saja) + test
+- [x] Frontend: tab Map | Dashboard, ringkasan entitas untuk kedua role
+- [x] Frontend: statistik user untuk admin, heartbeat `/auth/me`
+- [x] README: endpoint stats, arti "online", keterbatasan
+
+Di luar scope dashboard (catat sebagai keterbatasan): status online realtime (WebSocket), daftar nama user yang online, grafik/riwayat aktivitas.
+
+Foto entitas (lanjutan di branch `feat/dashboard`, keputusan developer):
+- [ ] Backend: tabel `entity_photos`, penyimpanan file di `UPLOAD_DIR`, 4 endpoint foto + test
+- [ ] Frontend: galeri view-only di panel detail (semua role) + lihat foto besar; tambah/hapus foto di form New/Edit entity (admin), diproses saat Create/Save dan dibatalkan oleh Cancel (keputusan developer)
+- [ ] README: endpoint foto, `UPLOAD_DIR`, keterbatasan
+
+Di luar scope foto (catat sebagai keterbatasan): resize/thumbnail otomatis, crop, urutan foto yang bisa diatur, keterangan (caption) per foto.
+
+Rencana berikutnya (belum dikerjakan, urutan disetujui developer): durasi pemasangan fasilitas → data sensor IoT (endpoint perangkat + API key, data dummy) → live tracking kendaraan (simulator + SSE, posisi di memori, kendaraan yang dilacak tidak bisa di-drag). Kemampuan per type dikirim lewat `GET /api/meta` supaya frontend tidak meng-hardcode type.
 
 ## Aturan untuk AI Agent
 

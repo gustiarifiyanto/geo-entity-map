@@ -1,7 +1,10 @@
 import { useCallback, useState, type ReactNode } from 'react'
+import { AppBar, type View } from './components/AppBar'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import { useToast } from './components/toast/context'
 import { AuthScreen } from './features/auth/AuthScreen'
 import { useLogout, useMe } from './features/auth/hooks'
+import { Dashboard } from './features/dashboard/Dashboard'
 import { DeleteEntityDialog } from './features/entities/DeleteEntityDialog'
 import { EntityDetailPanel } from './features/entities/EntityDetailPanel'
 import { CreateEntityPanel, EditEntityPanel } from './features/entities/EntityFormPanels'
@@ -23,6 +26,12 @@ const NO_PANEL: Panel = { kind: 'none' }
 function App() {
   const me = useMe()
 
+  // Data first: a failed background heartbeat (e.g. the backend restarting)
+  // must not replace the map with an error screen.
+  if (me.data) {
+    // key: a different account starts with a fresh map state.
+    return <MapScreen key={me.data.id} user={me.data} />
+  }
   if (me.isPending) {
     return <CenteredMessage>Loading…</CenteredMessage>
   }
@@ -36,8 +45,7 @@ function App() {
       </CenteredMessage>
     )
   }
-  // key: a different account starts with a fresh map state.
-  return me.data ? <MapScreen key={me.data.id} user={me.data} /> : <AuthScreen />
+  return <AuthScreen />
 }
 
 function CenteredMessage({ children }: { children: ReactNode }) {
@@ -50,6 +58,8 @@ function MapScreen({ user }: { user: User }) {
   const logout = useLogout()
   const meta = useMeta()
   const entities = useEntities()
+  const [view, setView] = useState<View>('map')
+  const [confirmLogout, setConfirmLogout] = useState(false)
   const [panel, setPanel] = useState<Panel>(NO_PANEL)
   const [deleteTarget, setDeleteTarget] = useState<Entity | null>(null)
   const updateLocation = useUpdateEntityLocation()
@@ -113,83 +123,118 @@ function MapScreen({ user }: { user: User }) {
 
   return (
     <div className="relative h-full">
-      <EntityMap
-        entities={entities.data ?? []}
-        selectedId={selectedId}
-        onSelect={handleSelect}
-        onMapClick={handleMapClick}
-        markersDraggable={canManage && panel.kind === 'view'}
-        onMove={handleMove}
-        draft={panel.kind === 'create' ? panel : null}
-        onDraftMove={handleMapClick}
+      <AppBar
+        user={user}
+        view={view}
+        onViewChange={setView}
+        onLogout={() => setConfirmLogout(true)}
+        loggingOut={logout.isPending}
       />
+      {/* The map fills the screen under the translucent bar and stays mounted
+          under the dashboard, so switching tabs keeps the selection, an open
+          form and the map position. Overlays start below the bar (top-17). */}
+      <main className="absolute inset-0">
+        <EntityMap
+          entities={entities.data ?? []}
+          selectedId={selectedId}
+          onSelect={handleSelect}
+          onMapClick={handleMapClick}
+          markersDraggable={canManage && panel.kind === 'view'}
+          onMove={handleMove}
+          draft={panel.kind === 'create' ? panel : null}
+          onDraftMove={handleMapClick}
+        />
 
-      <div className="pointer-events-none absolute inset-x-3 top-3 z-[1000] flex flex-col items-start gap-2">
-        <div className="pointer-events-auto">
-          <MapHeader
-            entityCount={entities.data?.length}
-            statuses={meta.data?.statuses ?? []}
-            user={user}
-            canManage={canManage}
-            onLogout={() =>
-              logout.mutate(undefined, {
-                onError: (err) => toast.error(`Could not log out: ${err.message}`),
-              })
-            }
-            loggingOut={logout.isPending}
-          />
-        </div>
-        {error && (
-          <div
-            role="alert"
-            className="pointer-events-auto flex items-center gap-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 shadow ring-1 ring-red-200"
-          >
-            <span>{error.message}</span>
-            <button
-              type="button"
-              onClick={() => {
-                void entities.refetch()
-                void meta.refetch()
-              }}
-              className="font-medium underline"
+        <div className="pointer-events-none absolute inset-x-3 top-17 z-[1000] flex flex-col items-start gap-2">
+          <div className="pointer-events-auto animate-fade-in-up">
+            <MapHeader entityCount={entities.data?.length} statuses={meta.data?.statuses ?? []} canManage={canManage} />
+          </div>
+          {error && (
+            <div
+              role="alert"
+              className="pointer-events-auto flex animate-fade-in-up items-center gap-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 shadow ring-1 ring-red-200"
             >
-              Retry
-            </button>
+              <span>{error.message}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  void entities.refetch()
+                  void meta.refetch()
+                }}
+                className="font-medium underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+        </div>
+
+        {panel.kind !== 'none' && (
+          <div
+            // A new key per panel (not per keystroke or map click) replays the entrance animation.
+            key={panel.kind === 'create' ? 'create' : `${panel.kind}-${panel.id}`}
+            className="absolute inset-x-3 bottom-3 z-[1000] flex max-h-[70%] animate-fade-in-up flex-col sm:inset-x-auto sm:top-17 sm:right-3 sm:bottom-3 sm:max-h-none sm:w-96"
+          >
+            {panel.kind === 'view' && selected && (
+              <EntityDetailPanel
+                entity={selected}
+                onClose={closePanel}
+                onEdit={canManage ? () => setPanel({ kind: 'edit', id: selected.id }) : undefined}
+                onDelete={canManage ? () => setDeleteTarget(selected) : undefined}
+                movable={canManage}
+              />
+            )}
+            {panel.kind === 'create' && meta.data && (
+              <CreateEntityPanel
+                meta={meta.data}
+                latitude={panel.latitude}
+                longitude={panel.longitude}
+                onCreated={(entity) => showEntity(entity.id)}
+                onCancel={closePanel}
+              />
+            )}
+            {panel.kind === 'edit' && selected && meta.data && (
+              <EditEntityPanel
+                key={selected.id}
+                meta={meta.data}
+                entity={selected}
+                onSaved={(entity) => showEntity(entity.id)}
+                onCancel={() => showEntity(selected.id)}
+              />
+            )}
           </div>
         )}
-      </div>
 
-      {panel.kind !== 'none' && (
-        <div className="absolute inset-x-3 bottom-3 z-[1000] flex max-h-[70%] flex-col sm:inset-x-auto sm:top-3 sm:right-3 sm:bottom-3 sm:max-h-none sm:w-96">
-          {panel.kind === 'view' && selected && (
-            <EntityDetailPanel
-              entity={selected}
-              onClose={closePanel}
-              onEdit={canManage ? () => setPanel({ kind: 'edit', id: selected.id }) : undefined}
-              onDelete={canManage ? () => setDeleteTarget(selected) : undefined}
-              movable={canManage}
-            />
-          )}
-          {panel.kind === 'create' && meta.data && (
-            <CreateEntityPanel
-              meta={meta.data}
-              latitude={panel.latitude}
-              longitude={panel.longitude}
-              onCreated={(entity) => showEntity(entity.id)}
-              onCancel={closePanel}
-            />
-          )}
-          {panel.kind === 'edit' && selected && meta.data && (
-            <EditEntityPanel
-              key={selected.id}
-              meta={meta.data}
-              entity={selected}
-              onSaved={(entity) => showEntity(entity.id)}
-              onCancel={() => showEntity(selected.id)}
-            />
-          )}
-        </div>
-      )}
+        {view === 'dashboard' && (
+          <div className="absolute inset-0 z-[1100] animate-fade-in overflow-y-auto bg-gray-50 pt-20">
+            <Dashboard entities={entities.data} meta={meta.data} showUserStats={canManage} />
+          </div>
+        )}
+      </main>
+
+      <ConfirmDialog
+        open={confirmLogout}
+        title="Log out?"
+        confirmLabel="Log out"
+        pendingLabel="Logging out…"
+        pending={logout.isPending}
+        tone="neutral"
+        onConfirm={() =>
+          logout.mutate(undefined, {
+            // On success the login screen replaces this one.
+            onError: (err) => {
+              setConfirmLogout(false)
+              toast.error(`Could not log out: ${err.message}`)
+            },
+          })
+        }
+        onCancel={() => setConfirmLogout(false)}
+      >
+        <p>
+          You are logged in as <span className="font-medium text-gray-900">{user.email}</span>. You will need to log in
+          again to use the map.
+        </p>
+      </ConfirmDialog>
 
       <DeleteEntityDialog
         entity={deleteTarget}

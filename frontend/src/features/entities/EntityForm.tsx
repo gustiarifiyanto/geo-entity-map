@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useEffect, useMemo, type ReactNode } from 'react'
-import { useForm, useWatch } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import {
   charCount,
   createEntityFormSchema,
@@ -11,6 +11,7 @@ import {
 import { inputClass } from '../../components/formStyles'
 import type { EntityInput, Meta } from '../../types/entity'
 import { formatLabel } from './labels'
+import { AttributesEditor, type AttributesErrors } from './AttributesEditor'
 import { applyServerError } from './serverErrors'
 
 interface EntityFormProps {
@@ -22,6 +23,8 @@ interface EntityFormProps {
   pickedLatitude?: number
   pickedLongitude?: number
   locationHint?: string
+  /** Extra controls shown after the regular fields (e.g. the photo picker). */
+  extraFields?: ReactNode
   onSubmit: (input: EntityInput) => Promise<void>
   onCancel: () => void
 }
@@ -34,6 +37,7 @@ export function EntityForm({
   pickedLatitude,
   pickedLongitude,
   locationHint,
+  extraFields,
   onSubmit,
   onCancel,
 }: EntityFormProps) {
@@ -194,21 +198,23 @@ export function EntityForm({
           />
         </FormField>
 
-        <FormField id="attributes" label="Attributes" optional error={errors.attributes?.message}>
-          <textarea
-            id="attributes"
-            rows={4}
-            spellCheck={false}
-            placeholder={'{\n  "plate": "B 1234 XYZ"\n}'}
-            aria-invalid={errors.attributes ? true : undefined}
-            aria-describedby="attributes-hint"
-            className={`${inputClass} font-mono text-xs`}
-            {...register('attributes')}
+        {/* The editor shows its own per-row errors. */}
+        <FormField id="attributes" label="Attributes" optional>
+          <Controller
+            control={control}
+            name="attributes"
+            render={({ field }) => (
+              <AttributesEditor
+                value={field.value}
+                onChange={field.onChange}
+                // Nested errors follow the value's shape (rows[i].key, text).
+                errors={errors.attributes as AttributesErrors | undefined}
+              />
+            )}
           />
-          <p id="attributes-hint" className="mt-1 text-xs text-gray-500">
-            A JSON object with any extra properties.
-          </p>
         </FormField>
+
+        {extraFields}
       </div>
 
       <footer className="flex gap-2 border-t border-gray-100 p-4">

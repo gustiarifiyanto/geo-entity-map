@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
 import type { Entity } from '../../types/entity'
+import { PhotoGallery } from '../photos/PhotoGallery'
 import { formatLabel, statusColor } from './labels'
 
 interface EntityDetailPanelProps {
@@ -11,10 +12,17 @@ interface EntityDetailPanelProps {
   movable?: boolean
 }
 
-export function EntityDetailPanel({ entity, onClose, onEdit, onDelete, movable }: EntityDetailPanelProps) {
+export function EntityDetailPanel({
+  entity,
+  onClose,
+  onEdit,
+  onDelete,
+  movable,
+}: EntityDetailPanelProps) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      // An open dialog (photo viewer, confirmation) handles Escape itself.
+      if (event.key === 'Escape' && !document.querySelector('dialog[open]')) onClose()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -57,6 +65,9 @@ export function EntityDetailPanel({ entity, onClose, onEdit, onDelete, movable }
             {entity.latitude.toFixed(6)}, {entity.longitude.toFixed(6)}
           </span>
           {movable && <p className="mt-1 text-xs text-gray-500">Drag the highlighted pin on the map to move it.</p>}
+        </Field>
+        <Field label="Photos">
+          <PhotoGallery entityId={entity.id} entityName={entity.name} />
         </Field>
         <Field label="Description">
           {entity.description || <span className="text-gray-400">No description</span>}

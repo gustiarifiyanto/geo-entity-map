@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -9,6 +9,8 @@ interface ConfirmDialogProps {
   pending?: boolean
   onConfirm: () => void
   onCancel: () => void
+  /** "danger" (red) for destructive actions such as delete; "neutral" otherwise. */
+  tone?: 'danger' | 'neutral'
 }
 
 /**
@@ -24,8 +26,11 @@ export function ConfirmDialog({
   pending = false,
   onConfirm,
   onCancel,
+  tone = 'danger',
 }: ConfirmDialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
+  // Unique per dialog: several dialogs can be mounted at once.
+  const titleId = useId()
 
   useEffect(() => {
     const dialog = ref.current
@@ -41,7 +46,7 @@ export function ConfirmDialog({
   return (
     <dialog
       ref={ref}
-      aria-labelledby="confirm-dialog-title"
+      aria-labelledby={titleId}
       onCancel={(event) => {
         // Escape key: let React state drive closing.
         event.preventDefault()
@@ -54,7 +59,7 @@ export function ConfirmDialog({
       className="m-auto w-[calc(100%-2rem)] max-w-sm rounded-xl p-0 shadow-xl backdrop:bg-black/40"
     >
       <div className="p-5">
-        <h2 id="confirm-dialog-title" className="text-lg font-semibold text-gray-900">
+        <h2 id={titleId} className="text-lg font-semibold text-gray-900">
           {title}
         </h2>
         <div className="mt-2 text-sm text-gray-600">{children}</div>
@@ -64,7 +69,7 @@ export function ConfirmDialog({
             onClick={cancel}
             disabled={pending}
             autoFocus
-            className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-60"
           >
             Cancel
           </button>
@@ -72,7 +77,9 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={pending}
-            className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-60"
+            className={`rounded-lg px-3 py-2 text-sm font-medium text-white transition-colors disabled:opacity-60 ${
+              tone === 'danger' ? 'bg-red-600 hover:bg-red-500' : 'bg-gray-900 hover:bg-gray-700'
+            }`}
           >
             {pending && pendingLabel ? pendingLabel : confirmLabel}
           </button>

@@ -16,15 +16,24 @@ import (
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/model"
 )
 
-// SessionTTL is how long a login lasts. The session cookie uses the same lifetime.
-const SessionTTL = 7 * 24 * time.Hour
+const (
+	// SessionTTL is how long a login lasts. The session cookie uses the same lifetime.
+	SessionTTL = 7 * 24 * time.Hour
+	// OnlineWindow is how recently a session must have been used for its user to count as online.
+	OnlineWindow = 5 * time.Minute
+	// lastSeenInterval limits how often a session's last_seen_at is written, so
+	// most authenticated requests only read the database.
+	lastSeenInterval = time.Minute
+)
 
 // UserRepository is the user and session storage the auth service depends on.
 type UserRepository interface {
 	CreateUser(ctx context.Context, u model.User) error
 	UserByEmail(ctx context.Context, email string) (model.User, error)
 	CreateSession(ctx context.Context, tokenHash, userID string, createdAt, expiresAt time.Time) error
-	UserBySession(ctx context.Context, tokenHash string, now time.Time) (model.User, error)
+	UserBySession(ctx context.Context, tokenHash string, now time.Time) (model.User, time.Time, error)
+	TouchSession(ctx context.Context, tokenHash string, seenAt time.Time) error
+	UserStats(ctx context.Context, role model.Role, now, onlineSince time.Time) (model.UserStats, error)
 	DeleteSession(ctx context.Context, tokenHash string) error
 	DeleteExpiredSessions(ctx context.Context, now time.Time) error
 }
@@ -98,12 +107,41 @@ func (s *AuthService) Logout(ctx context.Context, token string) error {
 	return s.repo.DeleteSession(ctx, hashToken(token))
 }
 
-// Authenticate returns the user of an unexpired session, or model.ErrUnauthenticated.
+// Authenticate returns the user of an unexpired session, or
+// model.ErrUnauthenticated. It records the session as seen, at most once per
+// lastSeenInterval.
 func (s *AuthService) Authenticate(ctx context.Context, token string) (model.User, error) {
 	if token == "" {
 		return model.User{}, model.ErrUnauthenticated
 	}
-	return s.repo.UserBySession(ctx, hashToken(token), s.now())
+	now := s.now()
+	tokenHash := hashToken(token)
+	u, lastSeen, err := s.repo.UserBySession(ctx, tokenHash, now)
+	if err != nil {
+		return model.User{}, err
+	}
+	if now.Sub(lastSeen) >= lastSeenInterval {
+		if err := s.repo.TouchSession(ctx, tokenHash, now); err != nil {
+			return model.User{}, err
+		}
+	}
+	return u, nil
+}
+
+// Stats counts users for the admin dashboard. Total, active-session and online
+// counts cover role user only; ByRole lists every role, even with zero users.
+func (s *AuthService) Stats(ctx context.Context) (model.AdminStats, error) {
+	now := s.now()
+	users, err := s.repo.UserStats(ctx, model.RoleUser, now, now.Add(-OnlineWindow))
+	if err != nil {
+		return model.AdminStats{}, err
+	}
+	for _, r := range model.Roles {
+		if _, ok := users.ByRole[r]; !ok {
+			users.ByRole[r] = 0
+		}
+	}
+	return model.AdminStats{Users: users, OnlineWindowMinutes: int(OnlineWindow / time.Minute)}, nil
 }
 
 // EnsureAdmin creates an admin account unless the email is already registered.

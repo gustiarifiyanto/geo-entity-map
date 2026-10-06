@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import type { Entity, JsonObject, Meta } from '../types/entity'
+import type { Entity, Meta } from '../types/entity'
+import { attributesSchema, toAttributesValue } from './attributes'
 
 // Mirrors the backend rules in backend/internal/validation. Messages match the
 // backend so client and server errors read the same.
@@ -36,25 +37,8 @@ const oneOf = (allowed: readonly string[]) =>
     .min(1, { error: 'is required', abort: true })
     .refine((v) => allowed.includes(v), `must be one of: ${allowed.join(', ')}`)
 
-/** Attributes are edited as JSON text and sent as an object (or null when empty). */
-const attributes = z.string().transform((text, ctx): JsonObject | null => {
-  const trimmed = text.trim()
-  if (trimmed === '') return null
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(trimmed)
-  } catch {
-    ctx.addIssue({ code: 'custom', message: 'must be valid JSON' })
-    return z.NEVER
-  }
-  if (parsed === null) return null
-  if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-    ctx.addIssue({ code: 'custom', message: 'must be a JSON object' })
-    return z.NEVER
-  }
-  return parsed as JsonObject
-})
+/** Attributes are edited as name/value rows (see ./attributes) and sent as an object or null. */
+const attributes = attributesSchema
 
 /** Builds the entity form schema; allowed types/statuses come from GET /api/meta. */
 export function createEntityFormSchema(meta: Meta) {
@@ -77,7 +61,7 @@ export function createEntityFormSchema(meta: Meta) {
 }
 
 export type EntityFormSchema = ReturnType<typeof createEntityFormSchema>
-/** Raw form values (attributes as JSON text). */
+/** Raw form values (attributes as editor rows). */
 export type EntityFormValues = z.input<EntityFormSchema>
 /** Parsed values, ready to send as EntityInput. */
 export type EntityFormOutput = z.output<EntityFormSchema>
@@ -90,7 +74,7 @@ export function emptyFormValues(latitude: number, longitude: number): EntityForm
     latitude,
     longitude,
     description: '',
-    attributes: '',
+    attributes: toAttributesValue(null),
   }
 }
 
@@ -102,6 +86,6 @@ export function entityToFormValues(entity: Entity): EntityFormValues {
     latitude: entity.latitude,
     longitude: entity.longitude,
     description: entity.description,
-    attributes: entity.attributes ? JSON.stringify(entity.attributes, null, 2) : '',
+    attributes: toAttributesValue(entity.attributes),
   }
 }

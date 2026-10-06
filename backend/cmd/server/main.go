@@ -19,6 +19,7 @@ import (
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/model"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/repository"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/service"
+	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/storage"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/validation"
 )
 
@@ -28,6 +29,7 @@ type config struct {
 	cookieSecure  bool
 	adminEmail    string
 	adminPassword string
+	uploadDir     string
 }
 
 func loadConfig() (config, error) {
@@ -41,6 +43,7 @@ func loadConfig() (config, error) {
 		cookieSecure:  secure,
 		adminEmail:    os.Getenv("ADMIN_EMAIL"),
 		adminPassword: os.Getenv("ADMIN_PASSWORD"),
+		uploadDir:     getenv("UPLOAD_DIR", "./data/uploads"),
 	}, nil
 }
 
@@ -84,7 +87,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	entities := service.NewEntityService(repository.NewEntityRepository(db))
+	files, err := storage.NewFiles(cfg.uploadDir)
+	if err != nil {
+		return err
+	}
+	entities := service.NewEntityService(repository.NewEntityRepository(db), files)
+	photos := service.NewPhotoService(repository.NewPhotoRepository(db), files, entities)
 	auth, err := service.NewAuthService(repository.NewUserRepository(db), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -95,7 +103,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.port,
-		Handler:           handler.NewRouter(entities, auth, val, handler.Options{SecureCookie: cfg.cookieSecure}),
+		Handler:           handler.NewRouter(entities, auth, photos, val, handler.Options{SecureCookie: cfg.cookieSecure}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -104,7 +112,7 @@ func run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("server listening", "addr", srv.Addr, "db", cfg.dbPath)
+		slog.Info("server listening", "addr", srv.Addr, "db", cfg.dbPath, "uploads", cfg.uploadDir)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
