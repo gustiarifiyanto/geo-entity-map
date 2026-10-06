@@ -436,6 +436,7 @@ Frontend:
   - Optimistic update; jika gagal, kembalikan marker ke posisi semula dan tampilkan toast error
 - Hapus wajib melalui dialog konfirmasi
 - Warna marker mencerminkan status
+- **Kartu pencarian** (di bawah legenda): cari nama (tanpa beda huruf besar/kecil dan aksen) dan filter status. Hasilnya ditampilkan sebagai daftar yang bisa diklik (peta terbang ke pin + panel detail terbuka, Enter membuka hasil pertama, Escape menghapus pencarian), dan selama pencarian/filter aktif **hanya pin yang cocok yang tampil di peta** (keputusan developer). Pin yang sedang dipilih tetap tampil. Disaring di frontend dari list yang sudah dimuat; tidak ada perubahan API.
 
 **Jebakan yang perlu diwaspadai:** Leaflet bisa mengembalikan longitude di luar rentang -180..180 ketika map digeser melewati batas dunia. Selalu normalisasi longitude (atau batasi dengan `maxBounds` / `noWrap`) sebelum dikirim ke backend, jika tidak, validasi backend akan menolaknya.
 
@@ -508,7 +509,7 @@ MVP (wajib):
 - [x] README (cara menjalankan, alasan pemilihan library, workflow AI, fitur yang belum selesai)
 
 Nice to have (hanya setelah MVP selesai):
-- [ ] Filter berdasarkan type / status
+- [ ] Filter berdasarkan type / status (status + cari nama sudah ada di kartu pencarian peta; filter type belum)
 - [ ] Sidebar daftar entitas yang tersinkron dengan map
 - [ ] Clustering marker
 - [ ] Update realtime (SSE/WebSocket)

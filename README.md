@@ -44,6 +44,7 @@ Aplikasi web untuk menampilkan dan mengelola **entitas yang memiliki lokasi geog
 - **Attributes** diisi lewat baris *nama → nilai* (bukan JSON mentah). Nilai seperti `5000` atau `true` tersimpan sebagai angka/boolean, sisanya sebagai teks. Attributes lama yang berisi data bertingkat otomatis diedit dalam mode JSON supaya tidak rusak.
 - **Pindah lokasi:** pilih pin, lalu drag → `PATCH /location` dengan *optimistic update*. Kalau gagal, pin kembali ke posisi semula dan muncul toast error. Setelah berhasil, toast menampilkan tombol **Undo**.
 - **Hapus:** tombol *Delete* → dialog konfirmasi.
+- **Cari & filter di peta:** kartu di bawah legenda untuk mencari entitas berdasarkan nama (tidak membedakan huruf besar/kecil maupun aksen) dan menyaring status. Hasilnya muncul sebagai daftar; klik nama (atau tekan Enter untuk hasil pertama) untuk terbang ke pin dan membuka detailnya. Selama pencarian/filter aktif, peta hanya menampilkan pin yang cocok.
 - **Validasi di kedua sisi** dengan aturan dan pesan yang sama. Error 422 dari backend dipetakan ke field form yang sesuai.
 - Daftar type dan status **tidak di-hardcode** di frontend, melainkan diambil dari `GET /api/meta`.
 
@@ -471,7 +472,7 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
 
 **Belum dikerjakan (nice to have):**
 
-- Filter type/status di UI. Backend dan hook `useEntities(filter)` sudah mendukung, tinggal komponen UI-nya.
+- Filter berdasarkan **type** di UI (pencarian nama dan filter status sudah ada). Pencarian dilakukan di frontend dari list yang sudah dimuat; untuk data sangat besar perlu pencarian di backend.
 - Sidebar daftar entitas yang tersinkron dengan map.
 - Clustering marker (butuh dependency tambahan).
 - Update realtime (SSE/WebSocket). Saat ini perubahan dari tab atau user lain baru terlihat saat refetch (misalnya saat window kembali difokus).

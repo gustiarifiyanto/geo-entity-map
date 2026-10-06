@@ -73,6 +73,15 @@ export const en = {
     undoFailed: (name: string, reason: string) => `Could not undo the move of "${name}": ${reason}`,
     movedOutside: (name: string, by: string) => `"${name}" is now outside its operating zone (by ${by}).`,
   },
+  search: {
+    label: 'Search entities',
+    placeholder: 'Search by name…',
+    statusFilter: 'Filter by status',
+    allStatuses: 'All statuses',
+    clear: 'Clear search and filter',
+    results: (shown: number, total: number) => `${shown} of ${total}`,
+    none: 'No entity matches.',
+  },
   detail: {
     label: 'Entity details',
     close: 'Close details',

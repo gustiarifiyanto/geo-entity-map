@@ -71,6 +71,15 @@ export const id: Messages = {
     undoFailed: (name, reason) => `Gagal mengurungkan pemindahan "${name}": ${reason}`,
     movedOutside: (name, by) => `"${name}" sekarang berada di luar zona operasionalnya (sejauh ${by}).`,
   },
+  search: {
+    label: 'Cari entitas',
+    placeholder: 'Cari nama…',
+    statusFilter: 'Saring berdasarkan status',
+    allStatuses: 'Semua status',
+    clear: 'Hapus pencarian dan filter',
+    results: (shown, total) => `${shown} dari ${total}`,
+    none: 'Tidak ada entitas yang cocok.',
+  },
   detail: {
     label: 'Detail entitas',
     close: 'Tutup detail',

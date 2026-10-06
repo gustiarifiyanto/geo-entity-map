@@ -10,6 +10,8 @@ import { DeleteEntityDialog } from './features/entities/DeleteEntityDialog'
 import { EntityDetailPanel } from './features/entities/EntityDetailPanel'
 import { CreateEntityPanel, EditEntityPanel } from './features/entities/EntityFormPanels'
 import { EntityMap } from './features/entities/EntityMap'
+import { EntitySearch } from './features/entities/EntitySearch'
+import { EMPTY_FILTER, filterEntities, isFilterActive, type EntityFilterState } from './features/entities/search'
 import { MapHeader } from './features/entities/MapHeader'
 import { useEntities, useMeta, useUpdateEntityLocation } from './features/entities/hooks'
 import { distanceMeters, formatDistance } from './features/geofences/distance'
@@ -129,6 +131,18 @@ function MapScreen({ user }: { user: User }) {
   // From the dashboard: switch to the map, fly to the entity and show its
   // details. An open form is kept, so unsaved changes are never lost.
   const [focus, setFocus] = useState<{ latitude: number; longitude: number } | null>(null)
+
+  // Search card: the matches are listed and are the only pins on the map while
+  // a search or filter is active. The selected entity always stays visible, so
+  // its open panel never points at a hidden pin.
+  const [filter, setFilter] = useState<EntityFilterState>(EMPTY_FILTER)
+  const searchResults = useMemo(() => filterEntities(entities.data ?? [], filter), [entities.data, filter])
+  const mapEntities = useMemo(() => {
+    const all = entities.data ?? []
+    if (!isFilterActive(filter)) return all
+    const shown = new Set(searchResults.map((e) => e.id))
+    return all.filter((e) => shown.has(e.id) || e.id === selectedId)
+  }, [entities.data, filter, searchResults, selectedId])
   const openOnMap = useCallback(
     (id: string) => {
       const entity = entities.data?.find((e) => e.id === id)
@@ -199,7 +213,7 @@ function MapScreen({ user }: { user: User }) {
       <ZoneEditorContext.Provider value={zoneEditor}>
         <main className="absolute inset-0">
           <EntityMap
-            entities={entities.data ?? []}
+            entities={mapEntities}
             selectedId={selectedId}
             onSelect={handleSelect}
             onMapClick={handleMapClick}
@@ -216,6 +230,16 @@ function MapScreen({ user }: { user: User }) {
           <div className="pointer-events-none absolute inset-x-3 top-17 z-[1000] flex flex-col items-start gap-2">
             <div className="pointer-events-auto animate-fade-in-up">
               <MapHeader entityCount={entities.data?.length} statuses={meta.data?.statuses ?? []} canManage={canManage} />
+            </div>
+            <div className="pointer-events-auto w-72 max-w-full animate-fade-in-up">
+              <EntitySearch
+                filter={filter}
+                onFilterChange={setFilter}
+                results={searchResults}
+                total={entities.data?.length ?? 0}
+                statuses={meta.data?.statuses ?? []}
+                onOpen={openOnMap}
+              />
             </div>
             {error && (
               <div
