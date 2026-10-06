@@ -277,10 +277,10 @@ Nice to have (hanya setelah MVP selesai):
 - [ ] Update realtime (SSE/WebSocket)
 
 Auth (branch `feat/auth`, setelah MVP):
-- [ ] Backend: tabel users/sessions, register/login/logout/me, seed admin dari env
-- [ ] Backend: middleware 401/403 + test
-- [ ] Frontend: tampilan login/register, logout, sembunyikan kontrol kelola untuk role `user`
-- [ ] README: kontrak auth, env admin, alasan bcrypt, keterbatasan
+- [x] Backend: tabel users/sessions, register/login/logout/me, seed admin dari env
+- [x] Backend: middleware 401/403 + test
+- [x] Frontend: tampilan login/register, logout, sembunyikan kontrol kelola untuk role `user`
+- [x] README: kontrak auth, env admin, alasan bcrypt, keterbatasan
 
 Di luar scope auth (catat sebagai keterbatasan): lupa/ganti password, kelola user (promote ke admin), rate limiting login.
 
