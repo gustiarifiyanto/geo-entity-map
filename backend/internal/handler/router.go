@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/model"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/service"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/validation"
 )
@@ -14,6 +15,8 @@ import (
 type Options struct {
 	// SecureCookie marks the session cookie Secure (HTTPS only).
 	SecureCookie bool
+	// DemoAccounts are listed on the login page; nil outside demo mode.
+	DemoAccounts []model.DemoAccount
 }
 
 // Services are the business services the API is built on.
@@ -29,7 +32,7 @@ type Services struct {
 // NewRouter returns the HTTP handler for the whole API.
 func NewRouter(svc Services, val *validation.Validator, opts Options) http.Handler {
 	h := &entityHandler{svc: svc.Entities, val: val}
-	a := &authHandler{svc: svc.Auth, val: val, secureCookie: opts.SecureCookie}
+	a := &authHandler{svc: svc.Auth, val: val, secureCookie: opts.SecureCookie, demo: opts.DemoAccounts}
 	p := &photoHandler{svc: svc.Photos}
 	inst := &installationHandler{svc: svc.Installations, val: val}
 	sens := &sensorHandler{svc: svc.Sensors, val: val}
@@ -54,6 +57,7 @@ func NewRouter(svc Services, val *validation.Validator, opts Options) http.Handl
 			r.Post("/login", a.login)
 			r.Post("/logout", a.logout)
 			r.With(a.requireUser).Get("/me", a.me)
+			r.Get("/demo-accounts", a.demoAccounts)
 		})
 
 		// Everything else needs a login; changing entities needs the admin role.

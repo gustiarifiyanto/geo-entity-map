@@ -58,6 +58,12 @@ type testApp struct {
 
 func newApp(t *testing.T) testApp {
 	t.Helper()
+	return newAppWith(t, nil)
+}
+
+// newAppWith is newApp with router options built from the seeded auth service.
+func newAppWith(t *testing.T, options func(*service.AuthService) handler.Options) testApp {
+	t.Helper()
 	ctx := context.Background()
 	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -88,6 +94,10 @@ func newApp(t *testing.T) testApp {
 	installations := service.NewInstallationService(repository.NewInstallationRepository(db), entities, time.UTC)
 	sensors := service.NewSensorService(repository.NewSensorRepository(db), entities)
 	geofences := service.NewGeofenceService(repository.NewGeofenceRepository(db), entities)
+	opts := handler.Options{}
+	if options != nil {
+		opts = options(auth)
+	}
 	router := handler.NewRouter(handler.Services{
 		Entities:      entities,
 		Auth:          auth,
@@ -95,7 +105,7 @@ func newApp(t *testing.T) testApp {
 		Installations: installations,
 		Sensors:       sensors,
 		Geofences:     geofences,
-	}, val, handler.Options{})
+	}, val, opts)
 	return testApp{router: router, auth: auth, db: db, uploadDir: uploadDir, sensors: sensors}
 }
 

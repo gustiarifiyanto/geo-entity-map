@@ -202,3 +202,72 @@ func TestStatsListsNeverSeenSessionsLast(t *testing.T) {
 		t.Errorf("ActiveUsers = %+v, want seen first and quiet last, not online, without last_seen_at", list)
 	}
 }
+
+func TestSeedDemoAccounts(t *testing.T) {
+	s, _, _ := newTestService(t)
+	ctx := context.Background()
+
+	first, err := s.SeedDemoAccounts(ctx)
+	if err != nil {
+		t.Fatalf("SeedDemoAccounts: %v", err)
+	}
+	want := map[string]model.Role{model.DemoAdminEmail: model.RoleAdmin, model.DemoUserEmail: model.RoleUser}
+	if len(first) != len(want) {
+		t.Fatalf("got %d accounts, want %d: %+v", len(first), len(want), first)
+	}
+	for _, acc := range first {
+		if want[acc.Email] != acc.Role {
+			t.Errorf("account %s has role %s, want %s", acc.Email, acc.Role, want[acc.Email])
+		}
+		if len(acc.Password) < 8 {
+			t.Errorf("password for %s is too short: %d bytes", acc.Email, len(acc.Password))
+		}
+		sess, err := s.Login(ctx, model.LoginInput{Email: acc.Email, Password: acc.Password})
+		if err != nil || sess.User.Role != acc.Role {
+			t.Errorf("login %s: role %s, err %v", acc.Email, sess.User.Role, err)
+		}
+	}
+
+	// A restart keeps the same users but gives them new passwords.
+	second, err := s.SeedDemoAccounts(ctx)
+	if err != nil {
+		t.Fatalf("SeedDemoAccounts again: %v", err)
+	}
+	for i, acc := range second {
+		if acc.Password == first[i].Password {
+			t.Errorf("password for %s was not changed", acc.Email)
+		}
+		if _, err := s.Login(ctx, model.LoginInput{Email: acc.Email, Password: first[i].Password}); err != model.ErrInvalidCredentials {
+			t.Errorf("old password for %s: err = %v, want ErrInvalidCredentials", acc.Email, err)
+		}
+		if _, err := s.Login(ctx, model.LoginInput{Email: acc.Email, Password: acc.Password}); err != nil {
+			t.Errorf("new password for %s: %v", acc.Email, err)
+		}
+	}
+	stats, err := s.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.Users.ByRole[model.RoleAdmin] != 1 || stats.Users.ByRole[model.RoleUser] != 1 {
+		t.Errorf("demo users duplicated: %+v", stats.Users.ByRole)
+	}
+}
+
+func TestSeedDemoAccountsNeverPromotes(t *testing.T) {
+	s, _, _ := newTestService(t)
+	ctx := context.Background()
+	// Someone registered the demo admin email as a normal user.
+	registerUser(t, s, model.DemoAdminEmail)
+
+	accounts, err := s.SeedDemoAccounts(ctx)
+	if err != nil {
+		t.Fatalf("SeedDemoAccounts: %v", err)
+	}
+	if len(accounts) != 1 || accounts[0].Email != model.DemoUserEmail {
+		t.Errorf("accounts = %+v, want only the demo user", accounts)
+	}
+	sess, err := s.Login(ctx, model.LoginInput{Email: model.DemoAdminEmail, Password: "rahasia123"})
+	if err != nil || sess.User.Role != model.RoleUser {
+		t.Errorf("existing account changed: role %s, err %v", sess.User.Role, err)
+	}
+}

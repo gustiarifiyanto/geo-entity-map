@@ -96,3 +96,17 @@ type AdminStats struct {
 	Users               UserStats `json:"users"`
 	OnlineWindowMinutes int       `json:"online_window_minutes"`
 }
+
+// Demo accounts exist only when the server runs with DEMO_ACCOUNTS=true.
+const (
+	DemoAdminEmail = "admin@demo.local"
+	DemoUserEmail  = "user@demo.local"
+)
+
+// DemoAccount is a ready-made login shown on the login page in demo mode.
+// The password is generated at every server start and never stored in code.
+type DemoAccount struct {
+	Role     Role   `json:"role"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}

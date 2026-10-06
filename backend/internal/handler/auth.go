@@ -17,6 +17,8 @@ type authHandler struct {
 	svc          *service.AuthService
 	val          *validation.Validator
 	secureCookie bool
+	// demo is empty unless the server runs in demo mode.
+	demo []model.DemoAccount
 }
 
 type userKey struct{}
@@ -144,4 +146,15 @@ func sessionToken(r *http.Request) string {
 		return ""
 	}
 	return c.Value
+}
+
+// demoAccounts lists the demo logins for the login page. It is public and
+// returns an empty list unless the server runs with DEMO_ACCOUNTS=true.
+func (h *authHandler) demoAccounts(w http.ResponseWriter, _ *http.Request) {
+	accounts := h.demo
+	if accounts == nil {
+		accounts = []model.DemoAccount{}
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeData(w, http.StatusOK, accounts)
 }

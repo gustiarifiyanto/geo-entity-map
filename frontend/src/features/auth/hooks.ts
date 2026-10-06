@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { getMe, login, logout, register } from '../../api/auth'
+import { getDemoAccounts, getMe, login, logout, register } from '../../api/auth'
 import { ApiError } from '../../api/client'
 import type { User } from '../../types/auth'
 
@@ -74,5 +74,19 @@ export function useLogout() {
   return useMutation({
     mutationFn: logout,
     onSuccess: () => markLoggedOut(queryClient),
+  })
+}
+
+/**
+ * Demo logins shown on the login page. Their passwords change at every server
+ * start, so they are fetched fresh instead of cached.
+ */
+export function useDemoAccounts() {
+  return useQuery({
+    queryKey: ['auth', 'demo-accounts'],
+    queryFn: getDemoAccounts,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
   })
 }

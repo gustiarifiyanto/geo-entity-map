@@ -5,6 +5,7 @@ import { useToast } from './components/toast/context'
 import { AuthScreen } from './features/auth/AuthScreen'
 import { useI18n } from './i18n/context'
 import { useLogout, useMe } from './features/auth/hooks'
+import { HelpDialog } from './features/help/HelpDialog'
 import { Dashboard } from './features/dashboard/Dashboard'
 import { DeleteEntityDialog } from './features/entities/DeleteEntityDialog'
 import { EntityDetailPanel } from './features/entities/EntityDetailPanel'
@@ -68,6 +69,7 @@ function MapScreen({ user }: { user: User }) {
   const entities = useEntities()
   const [view, setView] = useState<View>('map')
   const [confirmLogout, setConfirmLogout] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [panel, setPanel] = useState<Panel>(NO_PANEL)
   const [deleteTarget, setDeleteTarget] = useState<Entity | null>(null)
   const updateLocation = useUpdateEntityLocation()
@@ -261,6 +263,25 @@ function MapScreen({ user }: { user: User }) {
             )}
           </div>
 
+          {/* Admin-only guide, bottom left (zoom and attribution are on the right). */}
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              aria-label={t.help.button}
+              title={t.help.button}
+              className="absolute bottom-6 left-3 z-[1000] flex h-10 w-10 animate-fade-in items-center justify-center rounded-full bg-white/95 text-gray-700 shadow-lg ring-1 ring-black/10 backdrop-blur transition-colors hover:bg-white hover:text-gray-900"
+            >
+              <svg viewBox="0 0 20 20" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+                <path
+                  fillRule="evenodd"
+                  d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM8.94 6.94a.75.75 0 1 1-1.061-1.061 3 3 0 1 1 2.871 5.026v.345a.75.75 0 0 1-1.5 0v-.5c0-.72.57-1.172 1.081-1.287A1.5 1.5 0 1 0 8.94 6.94ZM10 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+          )}
+
           {panel.kind !== 'none' && (
             <div
               // A new key per panel (not per keystroke or map click) replays the entrance animation.
@@ -309,6 +330,8 @@ function MapScreen({ user }: { user: User }) {
           )}
         </main>
       </ZoneEditorContext.Provider>
+
+      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} meta={meta.data} />
 
       <ConfirmDialog
         open={confirmLogout}

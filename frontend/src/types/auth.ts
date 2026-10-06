@@ -16,3 +16,10 @@ export interface Credentials {
   email: string
   password: string
 }
+
+/** A ready-made login from GET /api/auth/demo-accounts (demo mode only). */
+export interface DemoAccount {
+  role: string
+  email: string
+  password: string
+}

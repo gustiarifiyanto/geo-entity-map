@@ -227,3 +227,17 @@ func scanUser(s scanner) (model.User, error) {
 	}
 	return u, nil
 }
+
+// UpdatePasswordHash replaces the password hash of the user with id.
+func (r *UserRepository) UpdatePasswordHash(ctx context.Context, id, hash string) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, hash, id)
+	if err != nil {
+		return fmt.Errorf("update password hash: %w", err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return fmt.Errorf("update password hash: %w", err)
+	} else if n == 0 {
+		return model.ErrUserNotFound
+	}
+	return nil
+}

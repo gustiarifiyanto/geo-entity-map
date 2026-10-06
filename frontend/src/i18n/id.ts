@@ -58,6 +58,11 @@ export const id: Messages = {
     hide: 'Sembunyikan',
     registerNote: 'Akun baru bisa melihat peta. Minta admin jika Anda perlu mengelola entitas.',
     wrongCredentials: 'Email atau kata sandi salah.',
+    demoTitle: 'Akun demo',
+    demoNote: 'Aktif selama server berjalan dengan mode demo. Klik salah satu untuk mengisi form.',
+    demoUse: (email) => `Isi form masuk dengan ${email}`,
+    ownAccount: 'Ingin akun sendiri?',
+    ownAccountAction: 'Pakai tab Daftar.',
   },
   map: {
     entityCount: (n) => `${n} entitas`,
@@ -70,6 +75,40 @@ export const id: Messages = {
     moveFailed: (name, reason) => `Gagal memindahkan "${name}": ${reason}`,
     undoFailed: (name, reason) => `Gagal mengurungkan pemindahan "${name}": ${reason}`,
     movedOutside: (name, by) => `"${name}" sekarang berada di luar zona operasionalnya (sejauh ${by}).`,
+  },
+  help: {
+    button: 'Cara menambah dan mengubah entitas',
+    title: 'Panduan: mengelola entitas',
+    createTitle: 'Menambah entitas baru',
+    createSteps: [
+      'Klik area kosong di peta. Form terbuka dengan lintang dan bujur titik itu.',
+      'Untuk mengubah lokasi, klik titik lain atau seret pin hitam selama form terbuka.',
+      'Isi minimal Nama, Tipe, dan Status, lalu tekan Buat.',
+      'Pin baru muncul di peta dan detailnya terbuka.',
+    ],
+    fieldsTitle: 'Isian form',
+    fields: {
+      name: 'Nama: wajib, maksimal 100 karakter.',
+      type: 'Tipe: jenis entitas. Beberapa tipe membuka bagian tambahan (lihat di bawah).',
+      status: 'Status: menentukan warna pin (lihat keterangan di kiri atas).',
+      location: 'Lintang / Bujur: terisi dari peta, bisa juga diketik. Lintang −90 s.d. 90, bujur −180 s.d. 180.',
+      description: 'Deskripsi: opsional, maksimal 500 karakter.',
+      attributes: 'Atribut: baris nama → nilai yang opsional (mis. plat → B 1234 XYZ). Angka dan true/false disimpan apa adanya.',
+      photos: 'Foto: opsional, maksimal 5 file JPEG/PNG/WebP, masing-masing 5 MB. Diunggah saat disimpan.',
+    },
+    installation: (types) =>
+      `Pemasangan (${types}): tanggal mulai, target, dan selesai. Statusnya (berjalan, terlambat, …) dihitung otomatis.`,
+    sensor: (types) =>
+      `Sensor (${types}): apa yang diukur perangkat. Setelah disimpan, Ubah → Buat API key memberi key untuk perangkat sungguhan mengirim data.`,
+    zone: (types) =>
+      `Zona operasional (${types}): lingkaran tempat entitas seharusnya berada. Atur pusatnya dengan Pakai posisi pin atau Pilih di peta. Pin di luar zona ditandai, tidak ditolak.`,
+    tipsTitle: 'Mengubah, memindah, dan menghapus',
+    tips: [
+      'Klik pin untuk melihat detailnya, lalu Ubah atau Hapus.',
+      'Untuk memindah pin, pilih dulu, lalu seret. Toast menyediakan tombol Urungkan.',
+      'Perubahan baru tersimpan saat menekan Buat / Simpan perubahan; Batal membuangnya.',
+      'Pakai kartu pencarian untuk menemukan entitas berdasarkan nama atau status.',
+    ],
   },
   search: {
     label: 'Cari entitas',

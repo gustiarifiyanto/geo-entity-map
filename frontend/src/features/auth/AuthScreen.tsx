@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useForm, type UseFormSetError } from 'react-hook-form'
 import { ApiError } from '../../api/client'
 import { inputClass } from '../../components/formStyles'
@@ -11,7 +11,8 @@ import {
   registerSchema,
   type CredentialsFormValues,
 } from '../../schemas/auth'
-import { useLogin, useRegister } from './hooks'
+import { ADMIN_ROLE, type DemoAccount } from '../../types/auth'
+import { useDemoAccounts, useLogin, useRegister } from './hooks'
 
 type Mode = 'login' | 'register'
 const MODES: Mode[] = ['login', 'register']
@@ -63,22 +64,25 @@ export function AuthScreen() {
           </div>
         </header>
         {/* Remount on switch so values and errors from the other form do not carry over. */}
-        <CredentialsForm key={mode} mode={mode} />
+        <CredentialsForm key={mode} mode={mode} onRegister={() => setMode('register')} />
       </div>
     </main>
   )
 }
 
-function CredentialsForm({ mode }: { mode: Mode }) {
+function CredentialsForm({ mode, onRegister }: { mode: Mode; onRegister: () => void }) {
   const i18n = useI18n()
   const { t } = i18n
   const login = useLogin()
   const register = useRegister()
   const [showPassword, setShowPassword] = useState(false)
+  const submitRef = useRef<HTMLButtonElement>(null)
   const {
     register: field,
     handleSubmit,
     setError,
+    setValue,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<CredentialsFormValues>({
     resolver: zodResolver(mode === 'login' ? loginSchema : registerSchema),
@@ -98,6 +102,14 @@ function CredentialsForm({ mode }: { mode: Mode }) {
       applyServerError(error, setError, i18n)
     }
   })
+
+  // Fills the form; the user still presses Log in (or Enter, as the button gets focus).
+  const fillDemo = (account: DemoAccount) => {
+    clearErrors()
+    setValue('email', account.email)
+    setValue('password', account.password)
+    submitRef.current?.focus()
+  }
 
   const text = modeText(t, mode)
   return (
@@ -148,6 +160,7 @@ function CredentialsForm({ mode }: { mode: Mode }) {
       </FormField>
 
       <button
+        ref={submitRef}
         type="submit"
         disabled={isSubmitting}
         className="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-60"
@@ -156,6 +169,7 @@ function CredentialsForm({ mode }: { mode: Mode }) {
       </button>
 
       {mode === 'register' && <p className="text-center text-xs text-gray-500">{t.auth.registerNote}</p>}
+      {mode === 'login' && <DemoAccounts onPick={fillDemo} onRegister={onRegister} />}
     </form>
   )
 }
@@ -210,5 +224,53 @@ function FormField({ id, label, error, hint, children }: FormFieldProps) {
         hint && <p className="mt-1 text-xs text-gray-500">{hint}</p>
       )}
     </div>
+  )
+}
+
+interface DemoAccountsProps {
+  onPick: (account: DemoAccount) => void
+  onRegister: () => void
+}
+
+/**
+ * Ready-made logins for testing. The list comes from the backend and is
+ * empty unless it runs with DEMO_ACCOUNTS=true, so nothing shows otherwise.
+ */
+function DemoAccounts({ onPick, onRegister }: DemoAccountsProps) {
+  const { t, value } = useI18n()
+  const { data: accounts } = useDemoAccounts()
+  if (!accounts || accounts.length === 0) return null
+
+  return (
+    <section aria-label={t.auth.demoTitle} className="animate-fade-in border-t border-gray-100 pt-4">
+      <h2 className="text-sm font-semibold text-gray-900">{t.auth.demoTitle}</h2>
+      <p className="mt-0.5 text-xs text-gray-500">{t.auth.demoNote}</p>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {accounts.map((account) => (
+          <button
+            key={account.email}
+            type="button"
+            onClick={() => onPick(account)}
+            aria-label={t.auth.demoUse(account.email)}
+            className="min-w-0 rounded-lg px-3 py-2 text-left ring-1 ring-gray-200 transition hover:-translate-y-0.5 hover:bg-gray-50 hover:shadow-sm hover:ring-gray-300"
+          >
+            <span
+              className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-semibold ${
+                account.role === ADMIN_ROLE ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700'
+              }`}
+            >
+              {value(account.role)}
+            </span>
+            <span className="mt-1 block truncate text-xs text-gray-600">{account.email}</span>
+          </button>
+        ))}
+      </div>
+      <p className="mt-3 text-center text-xs text-gray-500">
+        {t.auth.ownAccount}{' '}
+        <button type="button" onClick={onRegister} className="font-medium text-gray-900 underline hover:text-gray-600">
+          {t.auth.ownAccountAction}
+        </button>
+      </p>
+    </section>
   )
 }

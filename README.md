@@ -11,6 +11,7 @@ Aplikasi web untuk menampilkan dan mengelola **entitas yang memiliki lokasi geog
   - **`admin`** bisa menambah, mengedit, memindah, dan menghapus entitas.
   - **`user`** hanya bisa melihat map dan detail. Register publik selalu membuat role `user`.
   - Hak akses ditegakkan di backend (401/403), frontend hanya menyembunyikan kontrol.
+  - Mode demo opsional (`DEMO_ACCOUNTS=true`): kartu akun demo admin dan user di halaman login, klik untuk mengisi form.
 - **Dashboard** (tab *Map | Dashboard* di bar atas):
   - **Semua role:** total entitas, jumlah per status (warna sama dengan pin), dan jumlah per type.
   - **Admin saja:** jumlah user terdaftar, *Online (last 5 min)*, dan *With an active session* (ketiganya hanya role `user`, admin tidak dihitung), plus jumlah per role. Kartu *With an active session* menampilkan email akun-akunnya dengan tanda **Online** atau "terakhir aktif N menit lalu". Diperbarui otomatis tiap 30 detik.
@@ -45,6 +46,7 @@ Aplikasi web untuk menampilkan dan mengelola **entitas yang memiliki lokasi geog
 - **Pindah lokasi:** pilih pin, lalu drag → `PATCH /location` dengan *optimistic update*. Kalau gagal, pin kembali ke posisi semula dan muncul toast error. Setelah berhasil, toast menampilkan tombol **Undo**.
 - **Hapus:** tombol *Delete* → dialog konfirmasi.
 - **Cari & filter di peta:** kartu di bawah legenda untuk mencari entitas berdasarkan nama (tidak membedakan huruf besar/kecil maupun aksen) dan menyaring status. Hasilnya muncul sebagai daftar; klik nama (atau tekan Enter untuk hasil pertama) untuk terbang ke pin dan membuka detailnya. Selama pencarian/filter aktif, peta hanya menampilkan pin yang cocok.
+- **Panduan untuk admin:** tombol "?" di pojok kiri bawah peta (hanya untuk admin) membuka popup cara membuat entitas baru dan penjelasan setiap bagian form. Bagian yang khusus type tertentu otomatis menyebut type yang mendukungnya, sesuai `/api/meta`.
 - **Validasi di kedua sisi** dengan aturan dan pesan yang sama. Error 422 dari backend dipetakan ke field form yang sesuai.
 - Daftar type dan status **tidak di-hardcode** di frontend, melainkan diambil dari `GET /api/meta`.
 
@@ -55,7 +57,7 @@ Kebutuhan: **Go 1.26+** dan **Node.js 20+**.
 ```bash
 # Terminal 1 — backend (http://localhost:8080), dengan akun admin pertama
 cd backend
-ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=ganti-password-ini go run ./cmd/server
+DEMO_ACCOUNTS=true ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=ganti-password-ini go run ./cmd/server
 
 # Terminal 2 — frontend (http://localhost:5173)
 cd frontend
@@ -66,10 +68,16 @@ npm run dev
 Di Windows PowerShell, set env di baris yang sama dengan perintahnya:
 
 ```powershell
-$env:ADMIN_EMAIL="admin@example.com"; $env:ADMIN_PASSWORD="ganti-password-ini"; go run ./cmd/server
+$env:DEMO_ACCOUNTS="true"; $env:ADMIN_EMAIL="admin@example.com"; $env:ADMIN_PASSWORD="ganti-password-ini"; go run ./cmd/server
 ```
 
 Buka **http://localhost:5173**, lalu login dengan email dan password admin di atas, atau buat akun `user` lewat tab *Register*.
+
+**Akun demo (untuk testing):** dengan `DEMO_ACCOUNTS=true`, halaman login menampilkan dua kartu, **Admin** (`admin@demo.local`) dan **User** (`user@demo.local`). Klik kartu untuk mengisi email dan password, lalu tekan *Log in*.
+
+- Password akun demo dibuat **acak setiap server start** dan tidak pernah ditulis di kode. Karena itu akun demo hanya aktif selama server berjalan dengan mode demo; setelah restart, klik kartunya lagi.
+- Tanpa `DEMO_ACCOUNTS=true`, kartu demo tidak muncul sama sekali, dan password akun demo lama tidak bisa diambil dari mana pun.
+- **Jangan aktifkan di server publik:** siapa pun yang bisa membuka halaman login bisa masuk sebagai admin demo.
 
 - Saat start, backend membuat akun admin **hanya jika email tersebut belum terdaftar**. Log menampilkan `admin account created` atau `admin account already exists`.
 - Mengganti `ADMIN_PASSWORD` **tidak** mengubah password admin yang sudah ada. Email yang sudah terdaftar sebagai `user` juga **tidak** dinaikkan menjadi admin.
@@ -89,10 +97,10 @@ Buka **http://localhost:5173**, lalu login dengan email dan password admin di at
 | `ADMIN_EMAIL` | – | Email admin pertama (lihat di atas) |
 | `ADMIN_PASSWORD` | – | Password admin pertama, 8–72 byte. **Jangan di-commit.** |
 | `COOKIE_SECURE` | `false` | Set `true` jika app disajikan lewat HTTPS, supaya cookie session hanya dikirim lewat HTTPS |
-
 | `UPLOAD_DIR` | `./data/uploads` | Folder file foto, satu subfolder per entitas (relatif terhadap folder `backend/`) |
 | `APP_TIMEZONE` | `Asia/Jakarta` | Zona waktu IANA untuk menentukan "hari ini" pada status pemasangan. Nilai yang salah membuat server menolak start. |
 | `SIMULATE_SENSORS` | `true` | Kirim data dummy tiap menit untuk setiap perangkat IoT yang sudah punya metric. Set `false` kalau sudah memakai alat sungguhan. |
+| `DEMO_ACCOUNTS` | `false` | Set `true` untuk menyiapkan akun demo admin + user (password acak per start) dan menampilkan kartunya di halaman login. Hanya untuk testing lokal. |
 
 Untuk mengulang dari data contoh, hentikan backend lalu hapus folder `backend/data/`. Semua akun, session, dan foto ikut terhapus.
 
@@ -159,6 +167,7 @@ Base path `/api`. Request dan response berformat JSON.
 | POST | `/api/auth/login` | Login `{email, password}` | 200 |
 | POST | `/api/auth/logout` | Hapus session (tetap 204 walau belum login) | 204 |
 | GET | `/api/auth/me` | User yang sedang login | 200 |
+| GET | `/api/auth/demo-accounts` | Akun demo `[{role, email, password}]` untuk halaman login; publik, list kosong jika `DEMO_ACCOUNTS` tidak aktif | 200 |
 | GET | `/api/admin/stats` | Statistik user untuk dashboard admin | 200 |
 | GET | `/api/entities/{id}/photos` | Daftar foto entitas, terlama dulu | 200 |
 | POST | `/api/entities/{id}/photos` | Upload satu foto (`multipart/form-data`, field `photo`) | 201 |

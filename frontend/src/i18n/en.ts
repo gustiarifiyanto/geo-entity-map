@@ -60,6 +60,11 @@ export const en = {
     hide: 'Hide',
     registerNote: 'New accounts can view the map. Ask an admin if you need to manage entities.',
     wrongCredentials: 'Incorrect email or password.',
+    demoTitle: 'Demo accounts',
+    demoNote: 'Active while the server runs in demo mode. Click one to fill in the form.',
+    demoUse: (email: string) => `Fill in the login for ${email}`,
+    ownAccount: 'Want your own account?',
+    ownAccountAction: 'Use the Register tab.',
   },
   map: {
     entityCount: (n: number) => plural(n, 'entity', 'entities'),
@@ -72,6 +77,40 @@ export const en = {
     moveFailed: (name: string, reason: string) => `Could not move "${name}": ${reason}`,
     undoFailed: (name: string, reason: string) => `Could not undo the move of "${name}": ${reason}`,
     movedOutside: (name: string, by: string) => `"${name}" is now outside its operating zone (by ${by}).`,
+  },
+  help: {
+    button: 'How to add and edit entities',
+    title: 'Guide: managing entities',
+    createTitle: 'Add a new entity',
+    createSteps: [
+      'Click an empty spot on the map. A form opens with the latitude and longitude of that spot.',
+      'To change the location, click another spot or drag the black pin while the form is open.',
+      'Fill in at least Name, Type and Status, then press Create.',
+      'The new pin appears on the map and its details open.',
+    ],
+    fieldsTitle: 'Form fields',
+    fields: {
+      name: 'Name: required, up to 100 characters.',
+      type: 'Type: what the entity is. Some types unlock extra sections (below).',
+      status: 'Status: decides the pin color (see the legend at the top left).',
+      location: 'Latitude / Longitude: filled from the map; can also be typed. Latitude −90 to 90, longitude −180 to 180.',
+      description: 'Description: optional, up to 500 characters.',
+      attributes: 'Attributes: optional name → value rows (e.g. plate → B 1234 XYZ). Numbers and true/false are stored as such.',
+      photos: 'Photos: optional, up to 5 JPEG/PNG/WebP files of 5 MB each. Uploaded when you save.',
+    },
+    installation: (types: string) =>
+      `Installation (${types}): start, target and completion dates. The status (on schedule, overdue, …) is calculated automatically.`,
+    sensor: (types: string) =>
+      `Sensor (${types}): what the device measures. After saving, Edit → Generate API key gives the key a real device uses to send readings.`,
+    zone: (types: string) =>
+      `Operating zone (${types}): a circle the entity should stay in. Set the center with Use pin position or Pick on map. Pins outside are flagged, not blocked.`,
+    tipsTitle: 'Edit, move and delete',
+    tips: [
+      'Click a pin to see its details, then Edit or Delete.',
+      'To move a pin, select it first, then drag it. A toast offers Undo.',
+      'Changes are only saved when you press Create / Save changes; Cancel discards them.',
+      'Use the search card to find an entity by name or status.',
+    ],
   },
   search: {
     label: 'Search entities',

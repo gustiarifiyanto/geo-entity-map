@@ -281,8 +281,11 @@ Objek foto: `{ "id", "entity_id", "url", "content_type", "size_bytes", "created_
 | POST | `/api/auth/login` | `{ "email", "password" }` | 200 `{ "data": user }` | cookie dipasang |
 | POST | `/api/auth/logout` | – | 204 | session dihapus, cookie dikosongkan; tetap 204 walau belum login |
 | GET | `/api/auth/me` | – | 200 `{ "data": user }` | 401 jika belum login |
+| GET | `/api/auth/demo-accounts` | – | 200 `{ "data": [{ "role", "email", "password" }] }` | publik; list kosong jika mode demo mati; `Cache-Control: no-store` |
 
 Objek user: `{ "id", "email", "role", "created_at" }`.
+
+**Akun demo (keputusan developer, pengecualian dari aturan kredensial):** jika env `DEMO_ACCOUNTS=true` (default `false`), saat start backend menyiapkan `admin@demo.local` (role `admin`) dan `user@demo.local` (role `user`) dengan **password acak baru setiap start**. Akun yang belum ada dibuat, akun yang sudah ada di-reset password-nya. Jika email demo sudah terdaftar dengan role lain, akun itu tidak diubah, tidak dinaikkan role-nya, dan tidak ikut di list. Password tidak pernah ditulis di kode atau repository; halaman login mengambilnya dari endpoint di atas dan menampilkan kartu yang mengisi form saat diklik. Jika mode demo mati, kartu tidak muncul sama sekali. Hanya untuk testing lokal: siapa pun yang bisa membuka halaman login bisa masuk sebagai admin demo.
 
 Cookie `session`: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age` 7 hari. `Secure` diatur oleh env `COOKIE_SECURE` (default `false` untuk localhost).
 
@@ -437,6 +440,7 @@ Frontend:
 - Hapus wajib melalui dialog konfirmasi
 - Warna marker mencerminkan status
 - **Kartu pencarian** (di bawah legenda): cari nama (tanpa beda huruf besar/kecil dan aksen) dan filter status. Hasilnya ditampilkan sebagai daftar yang bisa diklik (peta terbang ke pin + panel detail terbuka, Enter membuka hasil pertama, Escape menghapus pencarian), dan selama pencarian/filter aktif **hanya pin yang cocok yang tampil di peta** (keputusan developer). Pin yang sedang dipilih tetap tampil. Disaring di frontend dari list yang sudah dimuat; tidak ada perubahan API.
+- **Panduan (khusus admin):** tombol bulat "?" di pojok kiri bawah peta membuka dialog berisi cara menambah entitas di peta, penjelasan tiap bagian form, dan tips mengubah/memindah/menghapus. Bagian khusus type (Pemasangan, Sensor, Zona) menyebut type-nya dari `/api/meta`, jadi tidak di-hardcode (keputusan developer).
 
 **Jebakan yang perlu diwaspadai:** Leaflet bisa mengembalikan longitude di luar rentang -180..180 ketika map digeser melewati batas dunia. Selalu normalisasi longitude (atau batasi dengan `maxBounds` / `noWrap`) sebelum dikirim ke backend, jika tidak, validasi backend akan menolaknya.
 
@@ -459,7 +463,7 @@ npm run dev
 - Seed data hanya dimasukkan jika tabel masih kosong.
 - Vite mem-proxy `/api` ke backend, jadi tidak perlu setup CORS saat development.
 
-Konfigurasi lewat environment variable dengan nilai default: `PORT=8080`, `DB_PATH=./data/app.db`, `COOKIE_SECURE=false`, `UPLOAD_DIR=./data/uploads`, `APP_TIMEZONE=Asia/Jakarta`, `SIMULATE_SENSORS=true`.
+Konfigurasi lewat environment variable dengan nilai default: `PORT=8080`, `DB_PATH=./data/app.db`, `COOKIE_SECURE=false`, `UPLOAD_DIR=./data/uploads`, `APP_TIMEZONE=Asia/Jakarta`, `SIMULATE_SENSORS=true`, `DEMO_ACCOUNTS=false`.
 
 Admin pertama: `ADMIN_EMAIL` + `ADMIN_PASSWORD`. Saat start, jika email tersebut belum terdaftar, backend membuat user ber-role `admin`. Jika env tidak diisi, server tetap jalan dan mencatat peringatan di log. Nilai ini **tidak boleh** di-commit ke repository.
 
@@ -477,6 +481,7 @@ Ekspektasi minimal:
 - Test dashboard: migrasi menambah `last_seen_at` ke tabel `sessions` lama tanpa kehilangan data, `last_seen_at` diperbarui maksimal sekali per menit, perhitungan `stats` (user dengan beberapa session dihitung sekali, session kedaluwarsa dan di luar batas online tidak dihitung), hak akses `/api/admin/stats` (401/403/200)
 - Test foto: upload JPEG/PNG/WebP (201), file teks yang diberi nama `.jpg` (422), 5 MB vs 5 MB + 1 byte, foto ke-6 (422), entitas tidak ada (404), file ikut terhapus saat foto/entitas dihapus, header `nosniff` saat file diambil, hak akses tiap role
 - Test installation: perhitungan status di setiap batas (mulai besok → scheduled; target hari ini → in_progress; target kemarin → overdue; selesai tepat di target → completed_on_time; sehari setelah target → completed_late) dengan jam palsu, validasi tanggal (format, tanggal tidak ada, urutan, masa depan), type tanpa kemampuan (400), entitas tidak ada (404), hapus entitas ikut menghapus data pemasangan, hak akses tiap role
+- Test akun demo: list kosong saat mode demo mati, endpoint publik dan akunnya bisa login, start ulang mengganti password tanpa menduplikasi user, email demo yang sudah terdaftar dengan role lain tidak dinaikkan
 - Test sensor: endpoint perangkat dengan key benar (201), key salah/kosong/milik perangkat lain (401, pesan sama), key lama setelah generate ulang (401), nilai di batas rentang (−50 vs −50.1), `recorded_at` di masa depan/terlalu lama (422), key sebelum metric dipilih (400), type tanpa kemampuan (400), readings hanya metric aktif dan urut waktu, penghapusan data > 7 hari, simulator menulis lewat validasi yang sama dan tetap di dalam rentang, hak akses tiap role
 - Test geofence: rumus jarak dengan titik yang diketahui (Monas → Bundaran HI ≈ 2.2 km, toleransi kecil), batas `inside` (jarak = radius → inside, sedikit lebih → outside), radius 100 vs 99.9 dan 50 000 vs 50 000.1, koordinat pusat di batas, `inside` berubah setelah entitas dipindah (PATCH location), type tanpa kemampuan (400), entitas tidak ada (404), hapus entitas ikut menghapus zona, urutan daftar (di luar zona dulu), hak akses tiap role
 
@@ -569,6 +574,11 @@ Pilihan bahasa ID | EN (branch `feat/dashboard`, keputusan developer; frontend s
 - [x] README: cara kerja, cara menambah teks/bahasa, keterbatasan
 
 Di luar scope bahasa (catat sebagai keterbatasan): bahasa lain, terjemahan dari backend (Accept-Language), terjemahan data milik user.
+
+Akun demo di halaman login (branch `feat/dashboard`, keputusan developer):
+- [x] Backend: env `DEMO_ACCOUNTS`, seed admin + user demo dengan password acak per start, `GET /api/auth/demo-accounts` + test
+- [x] Frontend: kartu akun demo di tab Masuk (klik = form terisi), info mode demo, ajakan ke tab Daftar
+- [x] README: cara menjalankan dengan `DEMO_ACCOUNTS=true`, peringatan keamanan
 
 Rencana berikutnya (belum dikerjakan, ditunda oleh developer): live tracking kendaraan (simulator + SSE, posisi di memori, kendaraan yang dilacak tidak bisa di-drag), memakai fungsi pengecekan zona yang sama untuk menandai/mencatat saat kendaraan keluar zona. Kemampuan per type dikirim lewat `GET /api/meta` supaya frontend tidak meng-hardcode type.
 

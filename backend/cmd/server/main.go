@@ -36,6 +36,8 @@ type config struct {
 	timezone *time.Location
 	// simulateSensors writes dummy readings for IoT devices until real ones send data.
 	simulateSensors bool
+	// demoAccounts creates a demo admin and user with fresh passwords at every start.
+	demoAccounts bool
 }
 
 func loadConfig() (config, error) {
@@ -46,6 +48,10 @@ func loadConfig() (config, error) {
 	simulate, err := strconv.ParseBool(getenv("SIMULATE_SENSORS", "true"))
 	if err != nil {
 		return config{}, fmt.Errorf("SIMULATE_SENSORS must be true or false: %w", err)
+	}
+	demo, err := strconv.ParseBool(getenv("DEMO_ACCOUNTS", "false"))
+	if err != nil {
+		return config{}, fmt.Errorf("DEMO_ACCOUNTS must be true or false: %w", err)
 	}
 	tz, err := time.LoadLocation(getenv("APP_TIMEZONE", "Asia/Jakarta"))
 	if err != nil {
@@ -60,6 +66,7 @@ func loadConfig() (config, error) {
 		uploadDir:       getenv("UPLOAD_DIR", "./data/uploads"),
 		timezone:        tz,
 		simulateSensors: simulate,
+		demoAccounts:    demo,
 	}, nil
 }
 
@@ -119,6 +126,10 @@ func run() error {
 	if err := seedAdmin(ctx, cfg, auth, val); err != nil {
 		return err
 	}
+	demoAccounts, err := seedDemoAccounts(ctx, cfg, auth)
+	if err != nil {
+		return err
+	}
 	router := handler.NewRouter(handler.Services{
 		Entities:      entities,
 		Auth:          auth,
@@ -126,7 +137,7 @@ func run() error {
 		Installations: installations,
 		Sensors:       sensors,
 		Geofences:     geofences,
-	}, val, handler.Options{SecureCookie: cfg.cookieSecure})
+	}, val, handler.Options{SecureCookie: cfg.cookieSecure, DemoAccounts: demoAccounts})
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.port,
@@ -201,4 +212,22 @@ func seedAdmin(ctx context.Context, cfg config, auth *service.AuthService, val *
 		slog.Info("admin account already exists", "email", u.Email)
 	}
 	return nil
+}
+
+// seedDemoAccounts prepares the demo admin and demo user when DEMO_ACCOUNTS
+// is on. Their logins are public on the login page, so it is for local
+// testing only.
+func seedDemoAccounts(ctx context.Context, cfg config, auth *service.AuthService) ([]model.DemoAccount, error) {
+	if !cfg.demoAccounts {
+		return nil, nil
+	}
+	accounts, err := auth.SeedDemoAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	slog.Warn("demo mode: demo logins are shown on the login page with new passwords; never enable DEMO_ACCOUNTS on a public server", "accounts", len(accounts))
+	if len(accounts) < 2 {
+		slog.Warn("a demo email is already registered with another role; that demo account is not shown")
+	}
+	return accounts, nil
 }
