@@ -361,7 +361,7 @@ Di luar scope dashboard (catat sebagai keterbatasan): status online realtime (We
 
 Foto entitas (lanjutan di branch `feat/dashboard`, keputusan developer):
 - [ ] Backend: tabel `entity_photos`, penyimpanan file di `UPLOAD_DIR`, 4 endpoint foto + test
-- [ ] Frontend: galeri di panel detail (semua role), lihat foto besar, upload + hapus dengan konfirmasi (admin)
+- [ ] Frontend: galeri view-only di panel detail (semua role) + lihat foto besar; tambah/hapus foto di form New/Edit entity (admin), diproses saat Create/Save dan dibatalkan oleh Cancel (keputusan developer)
 - [ ] README: endpoint foto, `UPLOAD_DIR`, keterbatasan
 
 Di luar scope foto (catat sebagai keterbatasan): resize/thumbnail otomatis, crop, urutan foto yang bisa diatur, keterangan (caption) per foto.

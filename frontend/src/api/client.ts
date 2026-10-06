@@ -46,15 +46,18 @@ function fallbackMessage(status: number, code: string): string {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  // FormData (file uploads) is sent as is: the browser sets the multipart
+  // Content-Type with its boundary. Anything else is sent as JSON.
+  const isForm = body instanceof FormData
   let res: Response
   try {
     res = await fetch(`/api${path}`, {
       method,
       headers: {
         Accept: 'application/json',
-        ...(body !== undefined && { 'Content-Type': 'application/json' }),
+        ...(body !== undefined && !isForm && { 'Content-Type': 'application/json' }),
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: isForm ? body : body !== undefined ? JSON.stringify(body) : undefined,
     })
   } catch {
     throw new ApiError(0, 'network_error', 'Cannot reach the server. Is the backend running?')

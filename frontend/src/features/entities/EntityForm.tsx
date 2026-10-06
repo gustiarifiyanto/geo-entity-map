@@ -22,6 +22,8 @@ interface EntityFormProps {
   pickedLatitude?: number
   pickedLongitude?: number
   locationHint?: string
+  /** Extra controls shown after the regular fields (e.g. the photo picker). */
+  extraFields?: ReactNode
   onSubmit: (input: EntityInput) => Promise<void>
   onCancel: () => void
 }
@@ -34,6 +36,7 @@ export function EntityForm({
   pickedLatitude,
   pickedLongitude,
   locationHint,
+  extraFields,
   onSubmit,
   onCancel,
 }: EntityFormProps) {
@@ -209,6 +212,8 @@ export function EntityForm({
             A JSON object with any extra properties.
           </p>
         </FormField>
+
+        {extraFields}
       </div>
 
       <footer className="flex gap-2 border-t border-gray-100 p-4">
