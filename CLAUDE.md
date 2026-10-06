@@ -117,12 +117,26 @@ Tabel `entity_photos`:
 
 File foto disimpan di `UPLOAD_DIR` (default `./data/uploads`), **bukan** di database. Nama file selalu dibuat server; nama asli dari user tidak pernah dipakai sebagai path. Menghapus entitas atau foto juga menghapus file-nya di disk.
 
+Tabel `facility_installations` (hanya untuk entitas yang type-nya punya kemampuan `installation`, saat ini `facility`):
+
+| Kolom | Tipe | Aturan |
+|---|---|---|
+| `entity_id` | TEXT PK | FK ke `entities.id`, `ON DELETE CASCADE`; satu data pemasangan per entitas |
+| `started_on` | TEXT (`YYYY-MM-DD`) | wajib; tanggal mulai pemasangan |
+| `target_on` | TEXT (`YYYY-MM-DD`) | wajib; target selesai, ≥ `started_on` |
+| `completed_on` | TEXT (`YYYY-MM-DD`), nullable | tanggal selesai sebenarnya; ≥ `started_on` dan tidak boleh di masa depan |
+| `updated_at` | TEXT (RFC3339, UTC) | diisi oleh backend |
+
+Tanggal disimpan **tanpa jam** karena durasi dihitung per hari. "Hari ini" dihitung di zona waktu `APP_TIMEZONE` (default `Asia/Jakarta`), bukan UTC, supaya status tidak berubah jam 07.00 WIB.
+
 ### Enum — satu sumber kebenaran
 
 Nilai yang diizinkan **hanya** didefinisikan di `backend/internal/model`:
 - `type`: `vehicle`, `iot_device`, `facility` (akan ada penambahan type nantinya)
 - `status`: `active`, `inactive`, `maintenance`
 - `role`: `user`, `admin` (tidak diekspos lewat `/api/meta`; register selalu membuat `user`)
+- **Kemampuan per type** (`capabilities`): fitur khusus yang dimiliki type tertentu. Saat ini hanya `facility` → `installation`; nanti `iot_device` → `readings` dan `vehicle` → `tracking`. Dikirim lewat `GET /api/meta`, jadi frontend memeriksa `meta.capabilities[type]` dan **tidak** meng-hardcode "facility".
+- `installation_status` (dihitung, tidak disimpan): `scheduled` (mulai > hari ini), `in_progress` (belum selesai, hari ini ≤ target), `overdue` (belum selesai, hari ini > target), `completed_on_time` (selesai ≤ target), `completed_late` (selesai > target)
 
 Frontend **tidak boleh** meng-hardcode daftar ini untuk dropdown. Frontend mengambilnya dari `GET /api/meta`. Menambah type baru cukup dengan mengubah daftar konstanta di Go. (Label/warna marker di frontend boleh punya fallback untuk nilai yang tidak dikenal.)
 
@@ -143,6 +157,31 @@ Base path: `/api`. Request dan response dalam format JSON.
 | POST | `/api/entities/{id}/photos` | Upload satu foto (`multipart/form-data`, field `photo`) | 201 |
 | GET | `/api/photos/{photoId}` | File gambar (bukan JSON) | 200 |
 | DELETE | `/api/photos/{photoId}` | Menghapus foto | 204 |
+| GET | `/api/entities/{id}/installation` | Data pemasangan; `{ "data": null }` jika belum diisi | 200 |
+| PUT | `/api/entities/{id}/installation` | Isi/ubah data pemasangan `{ "started_on", "target_on", "completed_on" }` | 200 |
+| DELETE | `/api/entities/{id}/installation` | Menghapus data pemasangan | 204 |
+| GET | `/api/installations` | Semua data pemasangan (untuk dashboard), terlambat dulu | 200 |
+
+`GET /api/meta` kini juga mengirim `"capabilities": { "facility": ["installation"] }` (field tambahan, field lama tidak berubah).
+
+Objek installation:
+
+```json
+{
+  "entity_id": "…",
+  "started_on": "2026-10-01",
+  "target_on": "2026-10-20",
+  "completed_on": null,
+  "status": "in_progress",
+  "planned_days": 19,
+  "elapsed_days": 5,
+  "days_late": 0,
+  "updated_at": "2026-10-06T07:00:00Z"
+}
+```
+
+- `planned_days` = target − mulai. `elapsed_days` = (selesai, atau hari ini jika belum selesai) − mulai, minimal 0. `days_late` = berapa hari melewati target (0 jika tidak terlambat).
+- Endpoint installation untuk entitas yang type-nya **tidak** punya kemampuan `installation` → **400 `invalid_request`** "this entity type has no installation data".
 
 Objek foto: `{ "id", "entity_id", "url", "content_type", "size_bytes", "created_at" }`, dengan `url` = `/api/photos/{id}`. Bentuk objek entitas **tidak berubah**.
 
@@ -173,6 +212,8 @@ Otorisasi **wajib** dilakukan di middleware backend. Frontend hanya menyembunyik
 | `GET /api/admin/stats` | 401 | 403 | ✅ |
 | `GET /api/entities/{id}/photos`, `GET /api/photos/{photoId}` | 401 | ✅ | ✅ |
 | `POST /api/entities/{id}/photos`, `DELETE /api/photos/{photoId}` | 401 | 403 | ✅ |
+| `GET /api/entities/{id}/installation`, `GET /api/installations` | 401 | ✅ | ✅ |
+| `PUT`, `DELETE /api/entities/{id}/installation` | 401 | 403 | ✅ |
 
 ### Statistik admin
 
@@ -243,6 +284,7 @@ Backend:
 - `email`: trim + lowercase, format email valid, maks. 254 karakter
 - `password` saat register: 8–72 karakter (72 = batas byte bcrypt; hitung dalam byte); **tidak di-trim**
 - `password` saat login: cukup wajib diisi (aturan panjang tidak dicek supaya tidak membocorkan info)
+- Installation: `started_on` dan `target_on` wajib, format `YYYY-MM-DD` dan tanggal yang benar-benar ada (`2026-02-30` ditolak); `target_on` ≥ `started_on`; `completed_on` opsional, ≥ `started_on`, dan tidak boleh setelah hari ini. Pesan 422: `"is required"`, `"must be a date (YYYY-MM-DD)"`, `"must be on or after the start date"`, `"cannot be in the future"`
 - Foto: jenis file ditentukan dari **isi file** (`http.DetectContentType`), bukan dari ekstensi atau header `Content-Type` kiriman client; maks. 5 MB (`MaxBytesReader`); maks. 5 foto per entitas
 - Jangan pernah berasumsi frontend sudah melakukan validasi
 
@@ -259,6 +301,12 @@ Frontend:
 - Statistik user di-refetch tiap 30 detik selama tab Dashboard terbuka dan tab browser terlihat.
 - **Heartbeat:** selama tab browser terlihat, frontend memanggil `GET /api/auth/me` tiap 2 menit supaya user yang membuka app tapi diam tetap terhitung online.
 - Label di UI harus jujur (UI berbahasa Inggris): "Online (last 5 min)" dan "With an active session", bukan "logged in now".
+
+## Perilaku Pemasangan Fasilitas
+
+- Form New/Edit entity menampilkan bagian **Installation** hanya jika type yang dipilih punya kemampuan `installation` (dari `/api/meta`). Sama seperti foto, perubahan diproses saat Create/Save dan dibatalkan oleh Cancel. Jika type diganti ke type tanpa kemampuan itu, bagian tersebut disembunyikan dan tidak dikirim.
+- Panel detail (semua role) menampilkan badge status, tanggal, dan progress (`elapsed_days` / `planned_days`), plus "terlambat N hari" jika ada.
+- Dashboard (semua role): jumlah per status pemasangan dan daftar fasilitas yang `overdue`.
 
 ## Perilaku Map
 
@@ -290,7 +338,7 @@ npm run dev
 - Seed data hanya dimasukkan jika tabel masih kosong.
 - Vite mem-proxy `/api` ke backend, jadi tidak perlu setup CORS saat development.
 
-Konfigurasi lewat environment variable dengan nilai default: `PORT=8080`, `DB_PATH=./data/app.db`, `COOKIE_SECURE=false`, `UPLOAD_DIR=./data/uploads`.
+Konfigurasi lewat environment variable dengan nilai default: `PORT=8080`, `DB_PATH=./data/app.db`, `COOKIE_SECURE=false`, `UPLOAD_DIR=./data/uploads`, `APP_TIMEZONE=Asia/Jakarta`.
 
 Admin pertama: `ADMIN_EMAIL` + `ADMIN_PASSWORD`. Saat start, jika email tersebut belum terdaftar, backend membuat user ber-role `admin`. Jika env tidak diisi, server tetap jalan dan mencatat peringatan di log. Nilai ini **tidak boleh** di-commit ke repository.
 
@@ -307,6 +355,7 @@ Ekspektasi minimal:
 - Test auth: register/login/logout/me, email duplikat (422), kredensial salah (401), session kedaluwarsa (401), serta hak akses tiap role (401/403/sukses)
 - Test dashboard: migrasi menambah `last_seen_at` ke tabel `sessions` lama tanpa kehilangan data, `last_seen_at` diperbarui maksimal sekali per menit, perhitungan `stats` (user dengan beberapa session dihitung sekali, session kedaluwarsa dan di luar batas online tidak dihitung), hak akses `/api/admin/stats` (401/403/200)
 - Test foto: upload JPEG/PNG/WebP (201), file teks yang diberi nama `.jpg` (422), 5 MB vs 5 MB + 1 byte, foto ke-6 (422), entitas tidak ada (404), file ikut terhapus saat foto/entitas dihapus, header `nosniff` saat file diambil, hak akses tiap role
+- Test installation: perhitungan status di setiap batas (mulai besok → scheduled; target hari ini → in_progress; target kemarin → overdue; selesai tepat di target → completed_on_time; sehari setelah target → completed_late) dengan jam palsu, validasi tanggal (format, tanggal tidak ada, urutan, masa depan), type tanpa kemampuan (400), entitas tidak ada (404), hapus entitas ikut menghapus data pemasangan, hak akses tiap role
 
 ## Konvensi Kode
 
@@ -360,13 +409,21 @@ Dashboard (branch `feat/dashboard`, setelah auth):
 Di luar scope dashboard (catat sebagai keterbatasan): status online realtime (WebSocket), daftar nama user yang online, grafik/riwayat aktivitas.
 
 Foto entitas (lanjutan di branch `feat/dashboard`, keputusan developer):
-- [ ] Backend: tabel `entity_photos`, penyimpanan file di `UPLOAD_DIR`, 4 endpoint foto + test
-- [ ] Frontend: galeri view-only di panel detail (semua role) + lihat foto besar; tambah/hapus foto di form New/Edit entity (admin), diproses saat Create/Save dan dibatalkan oleh Cancel (keputusan developer)
-- [ ] README: endpoint foto, `UPLOAD_DIR`, keterbatasan
+- [x] Backend: tabel `entity_photos`, penyimpanan file di `UPLOAD_DIR`, 4 endpoint foto + test
+- [x] Frontend: galeri view-only di panel detail (semua role) + lihat foto besar; tambah/hapus foto di form New/Edit entity (admin), diproses saat Create/Save dan dibatalkan oleh Cancel (keputusan developer)
+- [x] README: endpoint foto, `UPLOAD_DIR`, keterbatasan
 
 Di luar scope foto (catat sebagai keterbatasan): resize/thumbnail otomatis, crop, urutan foto yang bisa diatur, keterangan (caption) per foto.
 
-Rencana berikutnya (belum dikerjakan, urutan disetujui developer): durasi pemasangan fasilitas → data sensor IoT (endpoint perangkat + API key, data dummy) → live tracking kendaraan (simulator + SSE, posisi di memori, kendaraan yang dilacak tidak bisa di-drag). Kemampuan per type dikirim lewat `GET /api/meta` supaya frontend tidak meng-hardcode type.
+Durasi pemasangan fasilitas (branch `feat/dashboard`):
+- [ ] Backend: `capabilities` di `/api/meta`, tabel `facility_installations`, 4 endpoint + perhitungan status di `APP_TIMEZONE` + test
+- [ ] Frontend: bagian Installation di form New/Edit (hanya type dengan kemampuan `installation`), tampilan status di panel detail
+- [ ] Frontend: ringkasan status pemasangan + daftar overdue di dashboard
+- [ ] README: endpoint, arti status, zona waktu, keterbatasan
+
+Di luar scope pemasangan (catat sebagai keterbatasan): riwayat perubahan tanggal, tahapan/milestone pemasangan, penanggung jawab/kontraktor, notifikasi saat terlambat.
+
+Rencana berikutnya (belum dikerjakan, urutan disetujui developer): data sensor IoT (endpoint perangkat + API key, data dummy) → live tracking kendaraan (simulator + SSE, posisi di memori, kendaraan yang dilacak tidak bisa di-drag). Kemampuan per type dikirim lewat `GET /api/meta` supaya frontend tidak meng-hardcode type.
 
 ## Aturan untuk AI Agent
 
