@@ -45,6 +45,16 @@ CREATE TABLE IF NOT EXISTS sessions (
 	last_seen_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);
+
+-- Photo metadata; the files themselves live in UPLOAD_DIR.
+CREATE TABLE IF NOT EXISTS entity_photos (
+	id           TEXT PRIMARY KEY,
+	entity_id    TEXT NOT NULL REFERENCES entities (id) ON DELETE CASCADE,
+	content_type TEXT NOT NULL,
+	size_bytes   INTEGER NOT NULL,
+	created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_entity_photos_entity_id ON entity_photos (entity_id);
 `
 
 // Migrate creates the schema if it does not exist and adds columns that

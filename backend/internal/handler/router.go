@@ -17,9 +17,16 @@ type Options struct {
 }
 
 // NewRouter returns the HTTP handler for the whole API.
-func NewRouter(entities *service.EntityService, auth *service.AuthService, val *validation.Validator, opts Options) http.Handler {
+func NewRouter(
+	entities *service.EntityService,
+	auth *service.AuthService,
+	photos *service.PhotoService,
+	val *validation.Validator,
+	opts Options,
+) http.Handler {
 	h := &entityHandler{svc: entities, val: val}
 	a := &authHandler{svc: auth, val: val, secureCookie: opts.SecureCookie}
+	p := &photoHandler{svc: photos}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
@@ -53,7 +60,13 @@ func NewRouter(entities *service.EntityService, auth *service.AuthService, val *
 					r.With(requireAdmin).Put("/", h.update)
 					r.With(requireAdmin).Delete("/", h.delete)
 					r.With(requireAdmin).Patch("/location", h.updateLocation)
+					r.Get("/photos", p.list)
+					r.With(requireAdmin).Post("/photos", p.upload)
 				})
+			})
+			r.Route("/photos/{photoID}", func(r chi.Router) {
+				r.Get("/", p.get)
+				r.With(requireAdmin).Delete("/", p.delete)
 			})
 		})
 	})

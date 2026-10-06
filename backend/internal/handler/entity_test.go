@@ -19,6 +19,7 @@ import (
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/model"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/repository"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/service"
+	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/storage"
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/validation"
 )
 
@@ -47,9 +48,10 @@ const (
 
 // testApp is a router backed by a fresh database that already has an admin.
 type testApp struct {
-	router http.Handler
-	auth   *service.AuthService
-	db     *sql.DB
+	router    http.Handler
+	auth      *service.AuthService
+	db        *sql.DB
+	uploadDir string
 }
 
 func newApp(t *testing.T) testApp {
@@ -74,8 +76,15 @@ func newApp(t *testing.T) testApp {
 	if _, _, err := auth.EnsureAdmin(ctx, model.RegisterInput{Email: adminEmail, Password: adminPassword}); err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
-	entities := service.NewEntityService(repository.NewEntityRepository(db))
-	return testApp{router: handler.NewRouter(entities, auth, val, handler.Options{}), auth: auth, db: db}
+	uploadDir := filepath.Join(t.TempDir(), "uploads")
+	files, err := storage.NewFiles(uploadDir)
+	if err != nil {
+		t.Fatalf("file storage: %v", err)
+	}
+	entities := service.NewEntityService(repository.NewEntityRepository(db), files)
+	photos := service.NewPhotoService(repository.NewPhotoRepository(db), files, entities)
+	router := handler.NewRouter(entities, auth, photos, val, handler.Options{})
+	return testApp{router: router, auth: auth, db: db, uploadDir: uploadDir}
 }
 
 // login returns a session cookie for an existing account.

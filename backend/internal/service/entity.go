@@ -23,14 +23,21 @@ type Repository interface {
 // EntityService implements entity use cases. Inputs passed to it must
 // already have been validated.
 type EntityService struct {
-	repo Repository
-	now  func() time.Time
+	repo  Repository
+	files EntityFiles
+	now   func() time.Time
+}
+
+// EntityFiles removes the files stored for an entity (its photos).
+type EntityFiles interface {
+	RemoveEntity(entityID string) error
 }
 
 // NewEntityService returns a service backed by repo.
-func NewEntityService(repo Repository) *EntityService {
+func NewEntityService(repo Repository, files EntityFiles) *EntityService {
 	return &EntityService{
-		repo: repo,
+		repo:  repo,
+		files: files,
 		// Timestamps are stored with second precision (RFC3339).
 		now: func() time.Time { return time.Now().UTC().Truncate(time.Second) },
 	}
@@ -83,7 +90,12 @@ func (s *EntityService) Delete(ctx context.Context, id string) error {
 	if !validID(id) {
 		return model.ErrNotFound
 	}
-	return s.repo.Delete(ctx, id)
+	// The photo rows go with the entity (ON DELETE CASCADE); the files are
+	// removed here.
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return err
+	}
+	return s.files.RemoveEntity(id)
 }
 
 func fromInput(id string, in model.EntityInput) model.Entity {
