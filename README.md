@@ -153,7 +153,7 @@ Layering backend: `handler → service → repository`. Handler tidak menjalanka
 
 | Library | Alasan |
 |---|---|
-| React + Vite + TypeScript | Sesuai soal. Vite memberi dev server cepat dan proxy `/api`. |
+| React + Vite + TypeScript | Vite memberi dev server cepat dan proxy `/api`. |
 | Leaflet + `react-leaflet` | Library map gratis dan ringan, mendukung marker yang bisa di-drag, dengan API sederhana |
 | Tile OpenStreetMap | Gratis dan **tanpa API key**, jadi reviewer bisa langsung menjalankan app. CARTO (sekarang butuh API key) dan Stadia sempat dicoba lalu tidak dipakai. |
 | `@tanstack/react-query` | Server state: caching, refetch setelah mutasi, optimistic update + rollback untuk drag marker |
@@ -164,21 +164,20 @@ Dialog konfirmasi dan toast dibuat sendiri (elemen `<dialog>` bawaan browser + c
 
 ## Workflow AI
 
-Proyek ini dikerjakan bersama **Claude Code** (Anthropic) sebagai *pair programmer*. Developer mereview semua kode dan mengambil keputusan desain akhir.
+Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair programmer*. AI membantu menulis kode, tetapi saya yang mengatur alur kerja, mereview semua kode, mengambil keputusan desain akhir, dan berperan sebagai QA.
 
-1. **`CLAUDE.md` sebagai sumber kebenaran.** Sebelum menulis kode, AI membaca brief, tech stack, kontrak API, aturan validasi, dan aturan agent (tidak menambah dependency atau mengubah kontrak tanpa persetujuan, test bersamaan dengan perubahan backend, dll.).
-2. **Rencana bertahap.** Pekerjaan dipecah menjadi 9 langkah, satu commit kecil per langkah dengan gaya conventional commits: setup → model/DB → validasi → API → data layer frontend → map → form → drag/hapus → README.
-3. **Keputusan diserahkan ke developer.** Setiap kali ada penyimpangan atau pilihan desain, AI berhenti dan bertanya. Contohnya:
-   - versi Go dinaikkan ke 1.26 karena dependency menuntutnya;
-   - status 422 untuk tipe field yang salah;
-   - perilaku form saat klik map;
-   - pemilihan basemap;
-   - pengaman drag.
-4. **Verifikasi sebelum menyatakan selesai.** Setiap langkah ditutup dengan `gofmt`/`go vet`/`go test` atau `typecheck`/`lint`/`build`. Selain itu ada smoke test API dengan curl lewat proxy Vite, dan pengecekan schema zod serta helper geo/error-mapping dengan skrip Node terhadap kasus yang sama dengan test backend.
-5. **Tes manual oleh developer.** Developer mencoba UI langsung di browser. Dari situ ditemukan masalah nyata: marker bisa **tergeser tanpa sengaja** saat menggeser map. Perbaikannya: hanya pin yang dipilih yang bisa di-drag, dan ada tombol Undo.
-6. **Kesalahan AI yang tertangkap dan diperbaiki:**
+1. **`CLAUDE.md` sebagai sumber kebenaran.** Saya menyusun `CLAUDE.md` dengan bantuan AI: brief, tech stack, kontrak API, aturan validasi, dan aturan untuk agent (tidak menambah dependency atau mengubah kontrak tanpa persetujuan saya, test ditulis bersamaan dengan perubahan backend, dll.). File ini dibaca AI sebelum menulis kode apa pun.
+2. **Rencana bertahap.** Saya memecah pekerjaan menjadi 9 langkah, satu commit kecil per langkah dengan gaya conventional commits: setup → model/DB → validasi → API → data layer frontend → map → form → drag/hapus → README. Saya mereview diff setiap langkah sebelum commit.
+3. **Keputusan desain di tangan saya.** Setiap kali ada penyimpangan dari `CLAUDE.md` atau pilihan desain, AI wajib berhenti dan bertanya. Beberapa keputusan yang saya ambil:
+   - **Basemap:** tetap memakai tile OpenStreetMap supaya reviewer bisa langsung menjalankan app tanpa API key.
+   - **Pengaman drag:** hanya pin yang sedang dipilih yang bisa di-drag, ditambah tombol Undo di toast.
+   - **422 vs 400:** field dengan tipe salah dikembalikan sebagai 422 per field, bukan 400, karena body-nya tetap JSON yang valid.
+   - Hal lain yang saya setujui: versi Go dinaikkan ke 1.26 karena dependency menuntutnya, dan perilaku form saat klik map.
+4. **Verifikasi sebelum dinyatakan selesai.** Setiap langkah ditutup dengan `gofmt`/`go vet`/`go test` atau `typecheck`/`lint`/`build`. Selain itu ada smoke test API dengan curl lewat proxy Vite, dan pengecekan schema zod serta helper geo/error-mapping dengan skrip Node terhadap kasus yang sama dengan test backend.
+5. **QA manual oleh saya.** Saya mencoba UI langsung di browser. Dari situ saya menemukan masalah nyata: marker bisa **tergeser tanpa sengaja** saat menggeser map. Setelah diperbaiki dengan pengaman drag + Undo, saya mengetes ulang: hanya pin terpilih yang bisa di-drag, pin terkunci saat form edit terbuka, Undo mengembalikan posisi (tetap setelah refresh), dan pin kembali ke posisi semula disertai toast error saat backend mati.
+6. **Kesalahan AI yang saya tangkap dan perbaiki:**
    - asersi test yang salah membaca `null` pada `json.RawMessage`;
-   - klaim bahwa tile CARTO gratis tanpa API key: curl mengembalikan 200, tapi gambarnya ternyata watermark "API KEY REQUIRED", dan baru ketahuan dari screenshot developer. Perubahan langsung di-revert.
+   - klaim bahwa tile CARTO gratis tanpa API key: curl mengembalikan 200, tapi gambarnya ternyata watermark "API KEY REQUIRED". Saya menemukannya dari screenshot di browser, lalu perubahan itu langsung di-revert.
 
 ## Fitur yang Belum Selesai & Keterbatasan
 

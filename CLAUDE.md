@@ -204,13 +204,13 @@ Git:
 ## Scope
 
 MVP (wajib):
-- [ ] Backend CRUD + PATCH location + `/api/meta`
-- [ ] Validasi backend + test
-- [ ] Map dengan marker
-- [ ] Tambah via klik map, edit via form, pindah via drag, hapus dengan konfirmasi
-- [ ] Tampilan detail
-- [ ] Validasi frontend + pemetaan error dari backend
-- [ ] README (cara menjalankan, alasan pemilihan library, workflow AI, fitur yang belum selesai)
+- [x] Backend CRUD + PATCH location + `/api/meta`
+- [x] Validasi backend + test
+- [x] Map dengan marker
+- [x] Tambah via klik map, edit via form, pindah via drag, hapus dengan konfirmasi
+- [x] Tampilan detail
+- [x] Validasi frontend + pemetaan error dari backend
+- [x] README (cara menjalankan, alasan pemilihan library, workflow AI, fitur yang belum selesai)
 
 Nice to have (hanya setelah MVP selesai):
 - [ ] Filter berdasarkan type / status
