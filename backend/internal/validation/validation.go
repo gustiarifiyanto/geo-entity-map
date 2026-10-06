@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -53,6 +54,12 @@ func New() (*Validator, error) {
 			raw := fl.Field().Bytes()
 			return len(raw) == 0 || (raw[0] == '{' && json.Valid(raw))
 		},
+		// bcrypt only uses the first 72 bytes, so longer passwords are rejected
+		// instead of silently truncated. "max" would count characters, not bytes.
+		"max_bytes": func(fl validator.FieldLevel) bool {
+			limit, err := strconv.Atoi(fl.Param())
+			return err == nil && len(fl.Field().String()) <= limit
+		},
 	}
 	for tag, fn := range rules {
 		if err := v.RegisterValidation(tag, fn); err != nil {
@@ -77,6 +84,20 @@ func (val *Validator) Entity(in *model.EntityInput) (FieldErrors, error) {
 
 // Location validates a location-only update. It returns nil when the input is valid.
 func (val *Validator) Location(in *model.LocationInput) (FieldErrors, error) {
+	return val.check(in)
+}
+
+// Register normalizes in (trimming and lowercasing the email) and validates it.
+// It returns nil when the input is valid.
+func (val *Validator) Register(in *model.RegisterInput) (FieldErrors, error) {
+	in.Normalize()
+	return val.check(in)
+}
+
+// Login normalizes in and checks that both fields are present.
+// It returns nil when the input is valid.
+func (val *Validator) Login(in *model.LoginInput) (FieldErrors, error) {
+	in.Normalize()
 	return val.check(in)
 }
 
@@ -105,8 +126,14 @@ func message(fe validator.FieldError) string {
 	switch fe.Tag() {
 	case "required":
 		return "is required"
+	case "min":
+		return fmt.Sprintf("must be at least %s characters", fe.Param())
 	case "max":
 		return fmt.Sprintf("must be at most %s characters", fe.Param())
+	case "max_bytes":
+		return fmt.Sprintf("must be at most %s bytes", fe.Param())
+	case "email":
+		return "must be a valid email address"
 	case "entity_type":
 		return "must be one of: " + join(model.EntityTypes)
 	case "entity_status":

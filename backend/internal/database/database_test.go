@@ -89,6 +89,55 @@ func TestSeedDataIsValid(t *testing.T) {
 	}
 }
 
+func insertUser(db *sql.DB, id, email, role string) error {
+	_, err := db.Exec(`INSERT INTO users (id, email, password_hash, role, created_at)
+		VALUES (?, ?, 'hash', ?, 'now')`, id, email, role)
+	return err
+}
+
+func TestSchemaAcceptsEveryRole(t *testing.T) {
+	db := openTestDB(t)
+	for _, r := range model.Roles {
+		if err := insertUser(db, "id-"+string(r), string(r)+"@example.com", string(r)); err != nil {
+			t.Errorf("insert user with role %q: %v", r, err)
+		}
+	}
+	if err := insertUser(db, "id-root", "root@example.com", "root"); err == nil {
+		t.Error("insert user with role \"root\" succeeded, want CHECK constraint error")
+	}
+}
+
+func TestSchemaRejectsDuplicateEmail(t *testing.T) {
+	db := openTestDB(t)
+	if err := insertUser(db, "a", "budi@example.com", "user"); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+	if err := insertUser(db, "b", "budi@example.com", "user"); err == nil {
+		t.Fatal("second insert with the same email succeeded, want UNIQUE constraint error")
+	}
+}
+
+func TestDeletingUserDeletesSessions(t *testing.T) {
+	db := openTestDB(t)
+	if err := insertUser(db, "u1", "budi@example.com", "user"); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (token_hash, user_id, expires_at, created_at)
+		VALUES ('t1', 'u1', 'later', 'now')`); err != nil {
+		t.Fatalf("insert session: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM users WHERE id = 'u1'`); err != nil {
+		t.Fatalf("delete user: %v", err)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&n); err != nil {
+		t.Fatalf("count sessions: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("sessions after deleting user = %d, want 0", n)
+	}
+}
+
 func TestSchemaRejectsOutOfRangeCoordinates(t *testing.T) {
 	db := openTestDB(t)
 	_, err := db.Exec(`INSERT INTO entities

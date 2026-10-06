@@ -15,6 +15,25 @@ func TestEntityTypeValid(t *testing.T) {
 	}
 }
 
+func TestRoleValid(t *testing.T) {
+	for _, r := range Roles {
+		if !r.Valid() {
+			t.Errorf("Role(%q).Valid() = false, want true", r)
+		}
+	}
+	for _, r := range []Role{"", "root", "Admin", "admin "} {
+		if r.Valid() {
+			t.Errorf("Role(%q).Valid() = true, want false", r)
+		}
+	}
+}
+
+func TestNormalizeEmail(t *testing.T) {
+	if got, want := NormalizeEmail("  Budi@Example.COM \t"), "budi@example.com"; got != want {
+		t.Errorf("NormalizeEmail = %q, want %q", got, want)
+	}
+}
+
 func TestEntityStatusValid(t *testing.T) {
 	for _, s := range EntityStatuses {
 		if !s.Valid() {
