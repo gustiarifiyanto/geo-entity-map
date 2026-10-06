@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import type { Entity, Meta } from '../types/entity'
 import { attributesSchema, toAttributesValue } from './attributes'
+import { emptyInstallationValue, installationSchema, toInstallationValue } from './installation'
+import type { Installation } from '../types/installation'
+import { CAP_INSTALLATION, hasCapability } from './capabilities'
 
 // Mirrors the backend rules in backend/internal/validation. Messages match the
 // backend so client and server errors read the same.
@@ -57,13 +60,37 @@ export function createEntityFormSchema(meta: Meta) {
       .trim()
       .refine(...maxChars(DESCRIPTION_MAX)),
     attributes,
+    // Raw here; validated below only when the chosen type has the capability,
+    // so hidden fields of another type can never block saving.
+    installation: z.object({
+      enabled: z.boolean(),
+      started_on: z.string(),
+      target_on: z.string(),
+      completed_on: z.string(),
+    }),
   })
+    .transform(({ installation, ...entity }, ctx) => {
+      if (!hasCapability(meta, entity.type, CAP_INSTALLATION)) {
+        return { entity, installation: null }
+      }
+      const result = installationSchema.safeParse(installation)
+      if (!result.success) {
+        for (const issue of result.error.issues) {
+          ctx.addIssue({ code: 'custom', path: ['installation', ...issue.path], message: issue.message })
+        }
+        return z.NEVER
+      }
+      return { entity, installation: result.data }
+    })
 }
 
 export type EntityFormSchema = ReturnType<typeof createEntityFormSchema>
 /** Raw form values (attributes as editor rows). */
 export type EntityFormValues = z.input<EntityFormSchema>
-/** Parsed values, ready to send as EntityInput. */
+/**
+ * Parsed values: the EntityInput to send, and the installation to PUT (null
+ * when not tracked or when the type has no installation capability).
+ */
 export type EntityFormOutput = z.output<EntityFormSchema>
 
 export function emptyFormValues(latitude: number, longitude: number): EntityFormValues {
@@ -75,10 +102,11 @@ export function emptyFormValues(latitude: number, longitude: number): EntityForm
     longitude,
     description: '',
     attributes: toAttributesValue(null),
+    installation: emptyInstallationValue(),
   }
 }
 
-export function entityToFormValues(entity: Entity): EntityFormValues {
+export function entityToFormValues(entity: Entity, installation: Installation | null = null): EntityFormValues {
   return {
     name: entity.name,
     type: entity.type,
@@ -87,5 +115,6 @@ export function entityToFormValues(entity: Entity): EntityFormValues {
     longitude: entity.longitude,
     description: entity.description,
     attributes: toAttributesValue(entity.attributes),
+    installation: toInstallationValue(installation),
   }
 }

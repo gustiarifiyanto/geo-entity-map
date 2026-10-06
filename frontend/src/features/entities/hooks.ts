@@ -8,6 +8,7 @@ import {
   updateEntityLocation,
 } from '../../api/entities'
 import type { Entity, EntityFilter, EntityInput, LocationInput } from '../../types/entity'
+import { installationKeys } from '../installations/hooks'
 
 export const metaKey = ['meta'] as const
 
@@ -42,7 +43,12 @@ export function useUpdateEntity() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: EntityInput }) => updateEntity(id, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: entityKeys.all }),
+    // A type change can show or hide an installation schedule.
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: entityKeys.all }),
+        queryClient.invalidateQueries({ queryKey: installationKeys.all }),
+      ]),
   })
 }
 
@@ -51,7 +57,12 @@ export function useDeleteEntity() {
   return useMutation({
     mutationFn: deleteEntity,
     // Refetch on failure too: a 404 means it was already deleted elsewhere.
-    onSettled: () => queryClient.invalidateQueries({ queryKey: entityKeys.all }),
+    // The entity's installation schedule is deleted with it.
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: entityKeys.all }),
+        queryClient.invalidateQueries({ queryKey: installationKeys.all }),
+      ]),
   })
 }
 

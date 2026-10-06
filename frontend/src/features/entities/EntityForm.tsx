@@ -11,6 +11,9 @@ import {
 import { inputClass } from '../../components/formStyles'
 import type { EntityInput, Meta } from '../../types/entity'
 import { formatLabel } from './labels'
+import { CAP_INSTALLATION, hasCapability } from '../../schemas/capabilities'
+import type { InstallationInput } from '../../types/installation'
+import { InstallationFields } from '../installations/InstallationFields'
 import { AttributesEditor, type AttributesErrors } from './AttributesEditor'
 import { applyServerError } from './serverErrors'
 
@@ -25,7 +28,11 @@ interface EntityFormProps {
   locationHint?: string
   /** Extra controls shown after the regular fields (e.g. the photo picker). */
   extraFields?: ReactNode
-  onSubmit: (input: EntityInput) => Promise<void>
+  /**
+   * Receives the entity body and, separately, the installation schedule to
+   * save (null when not tracked or not supported by the chosen type).
+   */
+  onSubmit: (input: EntityInput, installation: InstallationInput | null) => Promise<void>
   onCancel: () => void
 }
 
@@ -68,10 +75,13 @@ export function EntityForm({
   }, [pickedLatitude, pickedLongitude, setValue])
 
   const description = useWatch({ control, name: 'description' })
+  const type = useWatch({ control, name: 'type' })
+  const installationEnabled = useWatch({ control, name: 'installation.enabled' })
+  const showInstallation = hasCapability(meta, type, CAP_INSTALLATION)
 
-  const submit = handleSubmit(async (values) => {
+  const submit = handleSubmit(async ({ entity, installation }) => {
     try {
-      await onSubmit(values)
+      await onSubmit(entity, installation)
     } catch (error) {
       applyServerError(error, setError)
     }
@@ -213,6 +223,10 @@ export function EntityForm({
             )}
           />
         </FormField>
+
+        {showInstallation && (
+          <InstallationFields register={register} errors={errors.installation} enabled={installationEnabled} />
+        )}
 
         {extraFields}
       </div>

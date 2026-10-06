@@ -19,6 +19,8 @@ export interface Entity {
 export interface Meta {
   types: string[]
   statuses: string[]
+  /** Features only some types have, e.g. { facility: ["installation"] }. */
+  capabilities: Record<string, string[]>
 }
 
 /** Body for POST /api/entities and PUT /api/entities/{id}. */
