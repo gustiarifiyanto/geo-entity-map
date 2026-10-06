@@ -152,6 +152,18 @@ Tabel `sensor_readings`:
 
 Data yang `recorded_at`-nya lebih dari **7 hari** dihapus otomatis.
 
+Tabel `geofences` (zona operasional; entitas dengan kemampuan `geofence`, saat ini `vehicle`):
+
+| Kolom | Tipe | Aturan |
+|---|---|---|
+| `entity_id` | TEXT PK | FK ke `entities.id`, `ON DELETE CASCADE`; satu zona (lingkaran) per entitas |
+| `center_latitude` | REAL | wajib, −90 ≤ lat ≤ 90 |
+| `center_longitude` | REAL | wajib, −180 ≤ lng ≤ 180 |
+| `radius_m` | REAL | wajib, 100 ≤ radius ≤ 50 000 (meter) |
+| `updated_at` | TEXT (RFC3339, UTC) | diisi oleh backend |
+
+Posisi entitas **tidak** dibatasi oleh zonanya: pin boleh berada di luar zona dan hanya ditandai "outside" (keputusan developer, supaya data tetap jujur dan cocok untuk live tracking nanti, di mana kendaraan asli bisa saja keluar zona).
+
 ### Enum — satu sumber kebenaran
 
 Nilai yang diizinkan **hanya** didefinisikan di `backend/internal/model`:
@@ -160,6 +172,7 @@ Nilai yang diizinkan **hanya** didefinisikan di `backend/internal/model`:
 - `role`: `user`, `admin` (tidak diekspos lewat `/api/meta`; register selalu membuat `user`)
 - **Kemampuan per type** (`capabilities`): fitur khusus yang dimiliki type tertentu. Saat ini `facility` dan `iot_device` → `installation` (IoT ditambahkan atas keputusan developer); nanti `iot_device` juga → `readings`, dan `vehicle` → `tracking`. Dikirim lewat `GET /api/meta`, jadi frontend memeriksa `meta.capabilities[type]` dan **tidak** meng-hardcode "facility".
 - `iot_device` juga punya kemampuan `readings` (data sensor).
+- `vehicle` punya kemampuan `geofence` (zona operasional berbentuk lingkaran).
 - `metric` (jenis sensor), dikirim lewat `GET /api/meta` sebagai `"metrics": [{ "id", "label", "unit", "min", "max" }]`:
   - `temperature` — Temperature, °C, −50 … 80
   - `water_level` — Water level, cm, 0 … 2000
@@ -205,6 +218,33 @@ Endpoint perangkat:
 - `value` wajib, berupa angka, dalam rentang metric → 422 `fields.value` (`"is required"`, `"must be between -50 and 80"`).
 - `recorded_at` opsional, RFC3339, tidak boleh lebih dari 5 menit ke depan dan tidak lebih tua dari 7 hari → 422 `fields.recorded_at`.
 - Endpoint sensor/readings untuk type tanpa kemampuan `readings` → 400 `invalid_request`; key dibuat sebelum metric dipilih → 400 `invalid_request` "choose the sensor metric first".
+
+Zona operasional:
+
+| Method | Path | Deskripsi | Sukses |
+|---|---|---|---|
+| GET | `/api/entities/{id}/geofence` | Zona entitas; `{ "data": null }` jika belum diisi | 200 |
+| PUT | `/api/entities/{id}/geofence` | Isi/ubah zona `{ "center_latitude", "center_longitude", "radius_m" }` | 200 |
+| DELETE | `/api/entities/{id}/geofence` | Hapus zona | 204 |
+| GET | `/api/geofences` | Semua zona (untuk lingkaran di map dan dashboard), yang di luar zona dulu | 200 |
+
+Objek geofence:
+
+```json
+{
+  "entity_id": "…",
+  "center_latitude": -6.2088,
+  "center_longitude": 106.8456,
+  "radius_m": 5000,
+  "distance_m": 1234.5,
+  "inside": true,
+  "updated_at": "2026-10-06T07:00:00Z"
+}
+```
+
+- `distance_m` = jarak dari pusat zona ke posisi entitas **saat ini** (rumus haversine, jari-jari bumi 6 371 008.8 m), dibulatkan 0.1 m. `inside` = `distance_m ≤ radius_m`. Keduanya **dihitung saat diminta**, tidak disimpan, jadi selalu sesuai posisi terakhir (termasuk setelah drag).
+- Pengecekan zona ada di satu fungsi di backend supaya live tracking nanti memakai fungsi yang sama dengan sumber posisi yang berbeda.
+- Endpoint geofence untuk type tanpa kemampuan `geofence` → 400 `invalid_request` "this entity type has no operating zone".
 
 **Simulator data dummy:** jika `SIMULATE_SENSORS` bukan `false` (default aktif), backend mengirim satu nilai per menit untuk setiap perangkat yang sudah punya metric, lewat **service dan validasi yang sama** dengan endpoint perangkat. Nilainya naik-turun secara wajar di dalam rentang metric. Perangkat yang belum punya data 24 jam terakhir diisi riwayat 24 jam (per 15 menit) supaya grafik langsung terisi. Simulator juga menghapus data > 7 hari.
 
@@ -263,6 +303,8 @@ Otorisasi **wajib** dilakukan di middleware backend. Frontend hanya menyembunyik
 | `GET /api/entities/{id}/sensor`, `GET /api/entities/{id}/readings` | 401 | ✅ | ✅ |
 | `PUT`, `DELETE /api/entities/{id}/sensor`, `POST .../sensor/key` | 401 | 403 | ✅ |
 | `POST /api/devices/{id}/readings` | API key perangkat (bukan session) | – | – |
+| `GET /api/entities/{id}/geofence`, `GET /api/geofences` | 401 | ✅ | ✅ |
+| `PUT`, `DELETE /api/entities/{id}/geofence` | 401 | 403 | ✅ |
 
 ### Statistik admin
 
@@ -334,6 +376,7 @@ Backend:
 - `password` saat register: 8–72 karakter (72 = batas byte bcrypt; hitung dalam byte); **tidak di-trim**
 - `password` saat login: cukup wajib diisi (aturan panjang tidak dicek supaya tidak membocorkan info)
 - Installation: `started_on` dan `target_on` wajib, format `YYYY-MM-DD` dan tanggal yang benar-benar ada (`2026-02-30` ditolak); `target_on` ≥ `started_on`; `completed_on` opsional, ≥ `started_on`, dan tidak boleh setelah hari ini. Pesan 422: `"is required"`, `"must be a date (YYYY-MM-DD)"`, `"must be on or after the start date"`, `"cannot be in the future"`
+- Geofence: `center_latitude`/`center_longitude` wajib dengan aturan yang sama seperti koordinat entitas (rentang, bukan NaN/Inf); `radius_m` wajib, angka, 100–50 000. Pesan 422: `"is required"`, `"must be between -90 and 90"`, `"must be between 100 and 50000"`
 - Foto: jenis file ditentukan dari **isi file** (`http.DetectContentType`), bukan dari ekstensi atau header `Content-Type` kiriman client; maks. 5 MB (`MaxBytesReader`); maks. 5 foto per entitas
 - Jangan pernah berasumsi frontend sudah melakukan validasi
 
@@ -362,6 +405,14 @@ Frontend:
 - Form New/Edit menampilkan bagian **Sensor** hanya untuk type dengan kemampuan `readings` (dari `/api/meta`). Admin memilih metric (dari `meta.metrics`); disimpan saat Create/Save seperti bagian lain.
 - Di form Edit, admin bisa menekan **Generate API key** (langsung dikirim, karena key harus ditampilkan sekali dan disalin). Key ditampilkan dengan tombol salin dan peringatan bahwa key tidak akan ditampilkan lagi. Generate ulang mematikan key lama.
 - Panel detail (semua role): nilai terakhir + satuan + "N min ago", grafik garis 24 jam (SVG, tanpa library), refetch tiap 30 detik selama panel terbuka.
+
+## Perilaku Zona Operasional
+
+- Form New/Edit menampilkan bagian **Operating zone** hanya untuk type dengan kemampuan `geofence` (dari `/api/meta`). Isinya checkbox "Limit to an operating zone", radius, dan pusat zona. Pusat default = posisi entitas di form; bisa diisi angka, tombol "Use pin position", atau tombol **"Pick on map"** lalu klik map (klik map berikutnya mengisi pusat zona, bukan membuat entitas baru). Disimpan saat Create/Save, Cancel membatalkan.
+- Map menggambar **lingkaran zona** untuk setiap entitas yang punya zona: garis putus-putus abu-abu jika di dalam, merah jika di luar. Saat form terbuka, lingkaran mengikuti isian form (pratinjau) sebelum disimpan.
+- Drag pin ke luar zona **tetap diizinkan**; setelah berhasil, toast peringatan "… is now outside its operating zone".
+- Panel detail (semua role): radius, dan "Inside (1.2 km from center)" atau badge merah "Outside zone by 800 m".
+- Dashboard (semua role): jumlah entitas di luar zona dan daftarnya.
 
 ## Perilaku Map
 
@@ -412,6 +463,7 @@ Ekspektasi minimal:
 - Test foto: upload JPEG/PNG/WebP (201), file teks yang diberi nama `.jpg` (422), 5 MB vs 5 MB + 1 byte, foto ke-6 (422), entitas tidak ada (404), file ikut terhapus saat foto/entitas dihapus, header `nosniff` saat file diambil, hak akses tiap role
 - Test installation: perhitungan status di setiap batas (mulai besok → scheduled; target hari ini → in_progress; target kemarin → overdue; selesai tepat di target → completed_on_time; sehari setelah target → completed_late) dengan jam palsu, validasi tanggal (format, tanggal tidak ada, urutan, masa depan), type tanpa kemampuan (400), entitas tidak ada (404), hapus entitas ikut menghapus data pemasangan, hak akses tiap role
 - Test sensor: endpoint perangkat dengan key benar (201), key salah/kosong/milik perangkat lain (401, pesan sama), key lama setelah generate ulang (401), nilai di batas rentang (−50 vs −50.1), `recorded_at` di masa depan/terlalu lama (422), key sebelum metric dipilih (400), type tanpa kemampuan (400), readings hanya metric aktif dan urut waktu, penghapusan data > 7 hari, simulator menulis lewat validasi yang sama dan tetap di dalam rentang, hak akses tiap role
+- Test geofence: rumus jarak dengan titik yang diketahui (Monas → Bundaran HI ≈ 2.0 km, toleransi kecil), batas `inside` (jarak = radius → inside, sedikit lebih → outside), radius 100 vs 99.9 dan 50 000 vs 50 000.1, koordinat pusat di batas, `inside` berubah setelah entitas dipindah (PATCH location), type tanpa kemampuan (400), entitas tidak ada (404), hapus entitas ikut menghapus zona, urutan daftar (di luar zona dulu), hak akses tiap role
 
 ## Konvensi Kode
 
@@ -480,14 +532,22 @@ Durasi pemasangan fasilitas (branch `feat/dashboard`):
 Di luar scope pemasangan (catat sebagai keterbatasan): riwayat perubahan tanggal, tahapan/milestone pemasangan, penanggung jawab/kontraktor, notifikasi saat terlambat.
 
 Data sensor IoT (branch `feat/dashboard`; keputusan developer: simulator di dalam backend, satu metric per perangkat, simpan 7 hari, simulator tiap 1 menit):
-- [ ] Backend: metrics di `/api/meta`, tabel `sensor_configs` + `sensor_readings`, endpoint sensor/key/readings, endpoint perangkat dengan API key + test
-- [ ] Backend: simulator + pembersihan data lama + test
-- [ ] Frontend: bagian Sensor di form (metric + Generate API key), nilai terakhir + grafik 24 jam di panel detail
-- [ ] README: cara menghubungkan alat sungguhan (contoh `curl`), metric, simulator, keterbatasan
+- [x] Backend: metrics di `/api/meta`, tabel `sensor_configs` + `sensor_readings`, endpoint sensor/key/readings, endpoint perangkat dengan API key + test
+- [x] Backend: simulator + pembersihan data lama + test
+- [x] Frontend: bagian Sensor di form (metric + Generate API key), nilai terakhir + grafik 24 jam di panel detail
+- [x] README: cara menghubungkan alat sungguhan (contoh `curl`), metric, simulator, keterbatasan
 
 Di luar scope sensor (catat sebagai keterbatasan): beberapa metric per perangkat, ambang batas/alarm, notifikasi, rate limiting endpoint perangkat, MQTT/protokol IoT lain, kalibrasi.
 
-Rencana berikutnya (belum dikerjakan, urutan disetujui developer): live tracking kendaraan (simulator + SSE, posisi di memori, kendaraan yang dilacak tidak bisa di-drag). Kemampuan per type dikirim lewat `GET /api/meta` supaya frontend tidak meng-hardcode type.
+Zona operasional kendaraan (branch `feat/dashboard`; keputusan developer: dikerjakan sebelum live tracking, lingkaran, pin di luar zona hanya ditandai, pusat bisa dipilih di map, radius 100 m – 50 km):
+- [ ] Backend: kemampuan `geofence`, tabel `geofences`, 4 endpoint, perhitungan jarak/inside + test
+- [ ] Frontend: bagian Operating zone di form (termasuk "Pick on map"), lingkaran zona di map + pratinjau saat form terbuka, toast saat drag ke luar zona
+- [ ] Frontend: status zona di panel detail + ringkasan di luar zona di dashboard
+- [ ] README: endpoint, perilaku, keterbatasan
+
+Di luar scope zona (catat sebagai keterbatasan): zona poligon, beberapa zona per kendaraan, jadwal zona per jam, riwayat keluar-masuk zona, notifikasi.
+
+Rencana berikutnya (belum dikerjakan, ditunda oleh developer): live tracking kendaraan (simulator + SSE, posisi di memori, kendaraan yang dilacak tidak bisa di-drag), memakai fungsi pengecekan zona yang sama untuk menandai/mencatat saat kendaraan keluar zona. Kemampuan per type dikirim lewat `GET /api/meta` supaya frontend tidak meng-hardcode type.
 
 ## Aturan untuk AI Agent
 

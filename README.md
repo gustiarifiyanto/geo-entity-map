@@ -29,6 +29,11 @@ Aplikasi web untuk menampilkan dan mengelola **entitas yang memiliki lokasi geog
   - Admin mengisi tanggal mulai, target, dan selesai (opsional) di bagian *Installation* pada form New/Edit. Bagian ini hanya muncul untuk type yang mendukungnya, berdasarkan `capabilities` dari `GET /api/meta`.
   - Status dihitung server: *Scheduled*, *In progress*, *Overdue*, *Completed on time*, *Completed late*, plus jumlah hari berjalan dan hari terlambat.
   - Panel detail menampilkan badge status, progress bar (bagian merah = lewat target), dan tanggal. Dashboard menampilkan jumlah per status dan daftar yang paling terlambat.
+- **Sensor IoT:**
+  - Admin memilih apa yang diukur perangkat (*Temperature* °C, *Water level* cm, *Wind speed* m/s) di bagian *Sensor* pada form.
+  - Di form Edit, admin membuat **API key perangkat**. Key ditampilkan sekali saja, lengkap dengan tombol salin dan contoh `curl`.
+  - Panel detail menampilkan nilai terakhir, "N min ago", dan grafik 24 jam dengan tooltip saat di-hover. Datanya diperbarui tiap 30 detik.
+  - Selama belum ada alat sungguhan, **simulator** di backend mengirim data dummy tiap menit.
 - **Attributes** diisi lewat baris *nama → nilai* (bukan JSON mentah). Nilai seperti `5000` atau `true` tersimpan sebagai angka/boolean, sisanya sebagai teks. Attributes lama yang berisi data bertingkat otomatis diedit dalam mode JSON supaya tidak rusak.
 - **Pindah lokasi:** pilih pin, lalu drag → `PATCH /location` dengan *optimistic update*. Kalau gagal, pin kembali ke posisi semula dan muncul toast error. Setelah berhasil, toast menampilkan tombol **Undo**.
 - **Hapus:** tombol *Delete* → dialog konfirmasi.
@@ -79,6 +84,7 @@ Buka **http://localhost:5173**, lalu login dengan email dan password admin di at
 
 | `UPLOAD_DIR` | `./data/uploads` | Folder file foto, satu subfolder per entitas (relatif terhadap folder `backend/`) |
 | `APP_TIMEZONE` | `Asia/Jakarta` | Zona waktu IANA untuk menentukan "hari ini" pada status pemasangan. Nilai yang salah membuat server menolak start. |
+| `SIMULATE_SENSORS` | `true` | Kirim data dummy tiap menit untuk setiap perangkat IoT yang sudah punya metric. Set `false` kalau sudah memakai alat sungguhan. |
 
 Untuk mengulang dari data contoh, hentikan backend lalu hapus folder `backend/data/`. Semua akun, session, dan foto ikut terhapus.
 
@@ -113,6 +119,12 @@ cd frontend && npm run typecheck && npm run lint
   - "hari ini" mengikuti `APP_TIMEZONE` (18.00 UTC tanggal 5 = tanggal 6 di Jakarta);
   - validasi tanggal: format, tanggal yang tidak ada (`2026-02-30`), urutan, selesai di masa depan;
   - type tanpa kemampuan → 400, entitas tidak ada → 404, urutan daftar, ganti type menyembunyikan jadwal, hapus entitas ikut menghapus jadwal, hak akses tiap role.
+- **Sensor** (`internal/handler/sensor_test.go`, `internal/validation`, `internal/simulator`):
+  - batas nilai (−50 vs −50.1, 80 vs 80.1), `recorded_at` tepat 5 menit ke depan vs 5 menit 1 detik, tepat 7 hari vs 7 hari 1 detik, format waktu salah;
+  - alur metric → key → kirim data → baca, urutan data, data metric lama disembunyikan setelah metric diganti;
+  - key ditolak dengan pesan yang sama: tanpa key, key salah, key perangkat lain, key yang sudah diganti, cookie login, dan setelah type diganti; body rusak dengan key salah tetap 401;
+  - type bukan IoT (400), entitas tidak ada (404), parameter `hours`, hak akses, hapus entitas ikut menghapus data sensor;
+  - simulator: riwayat 24 jam lalu +1 per tick, semua nilai di dalam rentang, type lain dilewati, data > 7 hari dihapus.
 - **Penyimpanan file** (`internal/storage`): tulis lewat file sementara lalu rename, nama berbahaya (`""`, `..`, `../x`, `a/b`) ditolak tanpa menghapus apa pun.
 - **Database** (`internal/database`): migrasi idempoten, seed hanya saat tabel kosong, constraint koordinat, CHECK role, email unik, hapus user ikut menghapus session, migrasi menambah `last_seen_at` ke tabel `sessions` lama tanpa kehilangan data.
 
@@ -142,6 +154,12 @@ Base path `/api`. Request dan response berformat JSON.
 | PUT | `/api/entities/{id}/installation` | Isi/ubah jadwal `{ started_on, target_on, completed_on }` | 200 |
 | DELETE | `/api/entities/{id}/installation` | Hapus jadwal | 204 |
 | GET | `/api/installations` | Semua jadwal (dashboard), paling terlambat dulu | 200 |
+| GET | `/api/entities/{id}/sensor` | Konfigurasi sensor; `{ "data": null }` jika belum ada | 200 |
+| PUT | `/api/entities/{id}/sensor` | Pilih metric `{ "metric" }` | 200 |
+| DELETE | `/api/entities/{id}/sensor` | Hapus sensor + key | 204 |
+| POST | `/api/entities/{id}/sensor/key` | Buat/ganti API key perangkat (ditampilkan sekali) | 201 |
+| GET | `/api/entities/{id}/readings?hours=24` | Data sensor 1–168 jam terakhir, terlama dulu | 200 |
+| POST | `/api/devices/{id}/readings` | **Dipanggil alat**, pakai `Authorization: Bearer <key>` | 201 |
 
 Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak pernah dikirim.
 
@@ -157,6 +175,9 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 | `POST .../photos`, `DELETE /api/photos/{photoId}` | 401 | 403 | ✅ |
 | `GET .../installation`, `GET /api/installations` | 401 | ✅ | ✅ |
 | `PUT`, `DELETE .../installation` | 401 | 403 | ✅ |
+| `GET .../sensor`, `GET .../readings` | 401 | ✅ | ✅ |
+| `PUT`, `DELETE .../sensor`, `POST .../sensor/key` | 401 | 403 | ✅ |
+| `POST /api/devices/{id}/readings` | API key perangkat, bukan session | – | – |
 
 **Session:** login dan register memasang cookie `session` (`HttpOnly`, `SameSite=Lax`, berlaku 7 hari). Isinya token acak 32 byte; database hanya menyimpan hash SHA-256 token tersebut, sehingga file DB yang bocor tidak bisa dipakai untuk login.
 
@@ -192,7 +213,7 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 
 **Kemampuan per type & jadwal pemasangan:**
 
-`GET /api/meta` mengirim `"capabilities": { "iot_device": ["installation"], "facility": ["installation"] }`. Daftar ini hanya ada di `backend/internal/model/installation.go`, dan frontend menampilkan fitur khusus berdasarkan daftar itu, tanpa menulis nama type sendiri. Perangkat IoT ditambahkan dengan mengubah satu baris di file tersebut.
+`GET /api/meta` mengirim `"capabilities": { "iot_device": ["installation", "readings"], "facility": ["installation"] }`. Daftar ini hanya ada di `backend/internal/model/installation.go`, dan frontend menampilkan fitur khusus berdasarkan daftar itu, tanpa menulis nama type sendiri. Perangkat IoT ditambahkan dengan mengubah satu baris di file tersebut.
 
 ```json
 { "data": { "entity_id": "…", "started_on": "2026-09-20", "target_on": "2026-10-01",
@@ -213,6 +234,38 @@ Objek user: `{ "id", "email", "role", "created_at" }`. Hash password tidak perna
 - Tanggal disimpan sebagai `YYYY-MM-DD` tanpa jam. "Hari ini" dihitung di `APP_TIMEZONE` (default `Asia/Jakarta`), supaya status berganti tengah malam WIB, bukan jam 07.00. Data zona waktu disertakan di binary (`time/tzdata`), jadi tetap jalan di Windows.
 - Endpoint jadwal untuk entitas yang type-nya tidak mendukung (misalnya kendaraan) → **400 `invalid_request`**. Kalau type entitas diganti, jadwalnya disimpan tetapi disembunyikan.
 
+**Sensor IoT:**
+
+| Metric | Satuan | Rentang valid |
+|---|---|---|
+| `temperature` | °C | −50 … 80 |
+| `water_level` | cm | 0 … 2000 |
+| `wind_speed` | m/s | 0 … 100 |
+
+Daftar metric (beserta satuan dan rentangnya) hanya ada di `backend/internal/model/sensor.go` dan dikirim lewat `GET /api/meta` sebagai `"metrics"`. Nilai di luar rentang ditolak sebagai data dari alat yang rusak. Satu perangkat mengukur satu metric.
+
+**Menghubungkan alat sungguhan:**
+
+1. Edit perangkat IoT → pilih metric → *Save*.
+2. Edit lagi → *Generate API key* → salin key-nya. Key hanya ditampilkan sekali. Di database cuma disimpan hash SHA-256-nya.
+3. Alat mengirim setiap pengukuran ke endpoint perangkat:
+
+```bash
+curl -X POST http://localhost:5173/api/devices/<entity-id>/readings \
+  -H "Authorization: Bearer gem_…" \
+  -H "Content-Type: application/json" \
+  -d '{"value": 27.5}'
+# opsional: "recorded_at": "2026-10-06T08:00:00Z" (default: waktu diterima)
+```
+
+4. Matikan simulator (`SIMULATE_SENSORS=false`) supaya data dummy tidak bercampur dengan data asli.
+
+- Endpoint perangkat **tidak memakai login user**. Key dicek **sebelum** body dibaca. Key salah, key kosong, key perangkat lain, key yang sudah diganti, atau entitas yang type-nya sudah diganti semuanya mendapat **401** dengan pesan yang sama (`invalid device key`), supaya tidak membocorkan penyebabnya.
+- *Regenerate* membuat key lama langsung tidak berlaku. Respons pembuatan key memakai `Cache-Control: no-store`.
+- `recorded_at` boleh paling jauh 5 menit ke depan (toleransi jam alat) dan paling lama 7 hari ke belakang.
+- **Simulator** berjalan di dalam backend dan mengirim satu nilai per menit untuk setiap perangkat yang sudah punya metric. Datanya lewat **validasi dan service yang sama** dengan endpoint perangkat. Nilainya naik-turun mengikuti pola harian (suhu paling tinggi sore hari). Perangkat yang belum punya data 24 jam terakhir langsung diisi riwayat 24 jam (per 15 menit), supaya grafik tidak kosong.
+- Data sensor disimpan **7 hari**, lalu dihapus otomatis oleh simulator. Kalau metric diganti, data metric lama tidak ditampilkan lagi.
+
 Format response:
 
 ```jsonc
@@ -229,8 +282,8 @@ Format response:
 | Status | Kode | Kapan |
 |---|---|---|
 | 400 | `invalid_json` | Body rusak/kosong, ada field yang tidak dikenal, lebih dari satu objek JSON, atau > 1 MiB |
-| 400 | `invalid_request` | Upload foto: body bukan `multipart/form-data`, field selain `photo`, atau lebih dari satu foto |
-| 401 | `unauthorized` | Belum login, atau session tidak valid / kedaluwarsa |
+| 400 | `invalid_request` | Upload foto: body bukan `multipart/form-data`, field selain `photo`, atau lebih dari satu foto. Fitur khusus (jadwal, sensor) untuk type yang tidak mendukungnya. Key dibuat sebelum metric dipilih. |
+| 401 | `unauthorized` | Belum login, session tidak valid / kedaluwarsa, atau API key perangkat salah |
 | 401 | `invalid_credentials` | Email atau password salah (pesan sama untuk keduanya, supaya tidak membocorkan email yang terdaftar) |
 | 403 | `forbidden` | Sudah login, tapi bukan admin |
 | 404 | `not_found` | Entitas tidak ada, ID bukan UUID, atau route tidak ada |
@@ -261,6 +314,8 @@ Keputusan tambahan yang tidak diatur di brief awal (disetujui developer):
 | `description` | opsional, di-trim, maks. 500 karakter |
 | `attributes` | opsional, harus **objek** JSON (`null` = kosong). Di form diisi sebagai baris nama → nilai; nama wajib dan tidak boleh dobel |
 
+**Data sensor (dari alat):** `value` wajib, berupa angka, dan di dalam rentang metric; `recorded_at` opsional, RFC3339, paling jauh 5 menit ke depan dan paling lama 7 hari ke belakang.
+
 **Jadwal pemasangan:** `started_on` dan `target_on` wajib, format `YYYY-MM-DD` persis dan tanggalnya benar-benar ada; `target_on` ≥ `started_on`; `completed_on` opsional, ≥ `started_on`, dan tidak boleh setelah hari ini.
 | `created_at`, `updated_at` | RFC3339 UTC (presisi detik), diisi backend |
 
@@ -287,6 +342,7 @@ backend/
   internal/repository/     query SQL berparameter (entities, users, sessions)
   internal/database/       koneksi, migrasi (termasuk penambahan kolom untuk DB lama), seed
   internal/storage/        file foto di disk (satu folder per entitas, nama selalu dicek)
+  internal/simulator/      data sensor dummy + pembersihan data lama
 frontend/src/
   api/                     fetch client (ApiError) + fungsi API yang typed
   components/              AppBar (tab Map | Dashboard), ConfirmDialog, toast, style form bersama
@@ -294,6 +350,7 @@ frontend/src/
   features/dashboard/      ringkasan entitas, statistik user admin
   features/photos/         galeri view-only, tampilan foto besar, pemilih foto di form (draft)
   features/installations/  bagian Installation di form, ringkasan status di panel detail, label/warna status
+  features/sensors/        bagian Sensor di form, panel API key, nilai terakhir + grafik 24 jam (SVG)
   features/entities/       map, marker, form, panel detail, hooks React Query, helper geo
   schemas/                 schema zod (mengikuti aturan backend)
   types/                   tipe bersama
@@ -327,7 +384,7 @@ Layering backend: `handler → service → repository`. Handler tidak menjalanka
 | `react-hook-form` + `zod` + `@hookform/resolvers` | Form performan dengan error per field. Schema zod dibangun dari `/api/meta` dan mengikuti aturan backend. |
 | Tailwind CSS | Styling cepat dan konsisten tanpa file CSS terpisah per komponen |
 
-Dialog konfirmasi, toast, halaman login, dan bar di dashboard dibuat sendiri (elemen `<dialog>` bawaan browser + context React + react-hook-form + `div` dengan Tailwind) supaya **tidak menambah dependency**. Library chart tidak diperlukan untuk beberapa bar horizontal. Upload foto memakai `multipart` dan `http.DetectContentType` dari stdlib Go, dan `FormData` + `<input type="file">` bawaan browser. Tidak ada router: halaman login tampil saat belum login, dan tab Map | Dashboard cukup berupa state biasa.
+Dialog konfirmasi, toast, halaman login, dan bar di dashboard dibuat sendiri (elemen `<dialog>` bawaan browser + context React + react-hook-form + `div` dengan Tailwind) supaya **tidak menambah dependency**. Library chart tidak diperlukan untuk beberapa bar horizontal. Upload foto memakai `multipart` dan `http.DetectContentType` dari stdlib Go, dan `FormData` + `<input type="file">` bawaan browser. Grafik sensor adalah satu garis SVG yang digambar sendiri, sedangkan simulator dan API key memakai `math/rand/v2`, `crypto/rand`, dan `crypto/sha256` dari stdlib, jadi tidak ada library chart maupun IoT. Tidak ada router: halaman login tampil saat belum login, dan tab Map | Dashboard cukup berupa state biasa.
 
 ## Workflow AI
 
@@ -355,6 +412,7 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
    - kolom attributes yang awalnya berupa JSON mentah saya minta diganti dengan baris nama → nilai, karena JSON mudah salah ketik bagi user biasa;
    - saya juga menemukan kolom nilai yang "kegepeng" di editor attributes, lalu diperbaiki.
 10. **Jadwal pemasangan.** Saya meminta fitur durasi pemasangan untuk mengontrol kualitas pemasangan fasilitas. Saya menyetujui tanggal tanpa jam, status yang dihitung server, dan zona waktu Jakarta. Setelah fiturnya jadi, saya memutuskan perangkat IoT juga perlu jadwal pemasangan. Karena fitur khusus per type sejak awal dirancang lewat `capabilities` di `/api/meta`, perubahan itu cukup satu baris di backend, dan UI langsung mengikuti.
+11. **Sensor IoT.** Saya ingin app ini siap dihubungkan ke alat sungguhan (perekam suhu, ketinggian air, kecepatan angin), tapi untuk sekarang memakai data dummy. Saya memilih simulator di dalam backend, satu metric per perangkat, data disimpan 7 hari, dan kiriman tiap menit. Syarat yang saya pegang: data dummy harus lewat jalur validasi yang sama dengan alat asli, supaya waktu alat sungguhan dipasang tidak ada kode yang perlu diubah. Saya mengetes alurnya langsung, termasuk mengirim data dengan `curl` memakai key dari UI dan memastikan key lama ditolak setelah *Regenerate*.
 
 ## Fitur yang Belum Selesai & Keterbatasan
 
@@ -369,7 +427,8 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
 - Daftar nama user yang sedang online, serta grafik/riwayat aktivitas di dashboard.
 - Untuk foto: resize/thumbnail otomatis, crop, mengatur urutan foto, dan keterangan (caption) per foto.
 - Untuk jadwal pemasangan: riwayat perubahan tanggal, tahapan/milestone, penanggung jawab/kontraktor, dan notifikasi saat terlambat.
-- Direncanakan (urutan sudah disepakati): data sensor IoT (endpoint perangkat + API key, data dummy) → live tracking kendaraan (simulator + SSE). Pilihan bahasa Indonesia/English juga ditunda.
+- Untuk sensor: beberapa metric per perangkat, ambang batas/alarm dan notifikasi, kalibrasi, MQTT atau protokol IoT lain, dan rate limiting endpoint perangkat.
+- Direncanakan (urutan sudah disepakati): live tracking kendaraan (simulator + SSE). Pilihan bahasa Indonesia/English juga ditunda.
 - **Rate limiting login.** Belum ada pembatasan percobaan login berulang.
 
 **Keterbatasan yang diketahui:**
@@ -389,6 +448,9 @@ Saya mengerjakan proyek ini bersama **Claude Code** (Anthropic) sebagai *pair pr
 - **File foto dan baris DB tidak dalam satu transaksi.** Kalau server mati tepat di antara menyimpan file dan menulis ke DB, bisa tersisa file yatim di `UPLOAD_DIR` (tidak terlihat di app, hanya memakan ruang disk).
 - **Perubahan foto di form diproses setelah entitas tersimpan.** Kalau upload sebagian gagal, entitas tetap tersimpan dan muncul toast berisi jumlah yang gagal; foto yang gagal perlu ditambahkan ulang.
 - **Validasi "tidak boleh di masa depan" di frontend memakai tanggal browser**, sedangkan backend memakai `APP_TIMEZONE`. Kalau zona waktu browser berbeda jauh, frontend bisa lolos tapi backend menolak (atau sebaliknya). Backend tetap jadi penentu, dan entitasnya tetap tersimpan dengan toast berisi error jadwal.
+- **Endpoint perangkat belum dibatasi kecepatannya (rate limiting).** Alat dengan key yang benar bisa mengirim data sebanyak apa pun. Datanya tetap tervalidasi dan otomatis terhapus setelah 7 hari.
+- **Simulator dan alat asli bisa bercampur** kalau `SIMULATE_SENSORS` tidak dimatikan: simulator tetap mengirim satu nilai per menit untuk setiap perangkat yang punya metric.
+- **Grafik menampilkan semua titik 24 jam** (±1.440 titik per perangkat dari simulator) tanpa diringkas. Masih ringan untuk satu perangkat, tapi perlu agregasi kalau rentang waktunya diperpanjang.
 - **Nama tabel `facility_installations`** tetap dipakai walaupun sekarang juga untuk perangkat IoT, supaya tidak perlu migrasi ganti nama.
 - **Angka di attributes:** teks yang persis seperti angka (misalnya `1234`) selalu disimpan sebagai angka. Untuk memaksa disimpan sebagai teks, perlu mode JSON.
 - Backend tidak menyajikan file hasil build frontend dan tidak mengatur CORS. Untuk produksi, keduanya perlu disajikan dari origin yang sama (reverse proxy) atau CORS perlu ditambahkan.
