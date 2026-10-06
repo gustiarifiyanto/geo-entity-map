@@ -5,14 +5,15 @@ import {
   charCount,
   createEntityFormSchema,
   DESCRIPTION_MAX,
+  type EntityExtras,
   type EntityFormOutput,
   type EntityFormValues,
 } from '../../schemas/entity'
 import { inputClass } from '../../components/formStyles'
 import type { EntityInput, Meta } from '../../types/entity'
 import { formatLabel } from './labels'
-import { CAP_INSTALLATION, hasCapability } from '../../schemas/capabilities'
-import type { InstallationInput } from '../../types/installation'
+import { CAP_INSTALLATION, CAP_READINGS, hasCapability } from '../../schemas/capabilities'
+import { SensorFields } from '../sensors/SensorFields'
 import { InstallationFields } from '../installations/InstallationFields'
 import { AttributesEditor, type AttributesErrors } from './AttributesEditor'
 import { applyServerError } from './serverErrors'
@@ -29,10 +30,10 @@ interface EntityFormProps {
   /** Extra controls shown after the regular fields (e.g. the photo picker). */
   extraFields?: ReactNode
   /**
-   * Receives the entity body and, separately, the installation schedule to
-   * save (null when not tracked or not supported by the chosen type).
+   * Receives the entity body and, separately, the extras (installation,
+   * sensor) to save after it; extras of other types are always null.
    */
-  onSubmit: (input: EntityInput, installation: InstallationInput | null) => Promise<void>
+  onSubmit: (input: EntityInput, extras: EntityExtras) => Promise<void>
   onCancel: () => void
 }
 
@@ -78,10 +79,11 @@ export function EntityForm({
   const type = useWatch({ control, name: 'type' })
   const installationEnabled = useWatch({ control, name: 'installation.enabled' })
   const showInstallation = hasCapability(meta, type, CAP_INSTALLATION)
+  const showSensor = hasCapability(meta, type, CAP_READINGS)
 
-  const submit = handleSubmit(async ({ entity, installation }) => {
+  const submit = handleSubmit(async ({ entity, extras }) => {
     try {
-      await onSubmit(entity, installation)
+      await onSubmit(entity, extras)
     } catch (error) {
       applyServerError(error, setError)
     }
@@ -227,6 +229,8 @@ export function EntityForm({
         {showInstallation && (
           <InstallationFields register={register} errors={errors.installation} enabled={installationEnabled} />
         )}
+
+        {showSensor && <SensorFields register={register} errors={errors.sensor} metrics={meta.metrics} />}
 
         {extraFields}
       </div>

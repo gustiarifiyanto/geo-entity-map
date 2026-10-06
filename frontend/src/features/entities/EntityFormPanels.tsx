@@ -1,30 +1,68 @@
 import { useState, type ReactNode } from 'react'
 import { useToast } from '../../components/toast/context'
-import { CAP_INSTALLATION, hasCapability } from '../../schemas/capabilities'
-import { emptyFormValues, entityToFormValues } from '../../schemas/entity'
+import { CAP_INSTALLATION, CAP_READINGS, hasCapability } from '../../schemas/capabilities'
+import { emptyFormValues, entityToFormValues, type EntityExtras } from '../../schemas/entity'
 import type { Entity, Meta } from '../../types/entity'
 import type { Installation } from '../../types/installation'
+import type { SensorConfig } from '../../types/sensor'
 import { useInstallation } from '../installations/hooks'
 import { useSaveInstallation } from '../installations/save'
 import { EMPTY_PHOTO_DRAFT, useSavePhotoDraft, type PhotoDraft } from '../photos/draft'
 import { usePhotos } from '../photos/hooks'
 import { PhotoField } from '../photos/PhotoField'
+import { DeviceKeyPanel } from '../sensors/DeviceKeyPanel'
+import { useSensor } from '../sensors/hooks'
+import { useSaveSensor } from '../sensors/save'
 import { EntityForm } from './EntityForm'
 import { useCreateEntity, useUpdateEntity } from './hooks'
 
+/** What failed after the entity itself was saved; empty when all went well. */
+interface FollowUpResult {
+  photos: { failed: number; firstError?: string }
+  installation: string | null
+  sensor: string | null
+}
+
 /**
- * Reports parts (photos, installation) that failed after the entity itself
- * was saved. The entity stays saved; the user can retry those parts.
+ * Reports parts (photos, installation, sensor) that failed after the entity
+ * itself was saved. The entity stays saved; the user can retry those parts.
  */
 function useFollowUpFailureToast() {
   const toast = useToast()
-  return (photos: { failed: number; firstError?: string }, installationError: string | null) => {
+  return ({ photos, installation, sensor }: FollowUpResult) => {
     const problems: string[] = []
     if (photos.failed > 0) {
       problems.push(`${photos.failed} photo change${photos.failed > 1 ? 's' : ''} (${photos.firstError})`)
     }
-    if (installationError) problems.push(`the installation schedule (${installationError})`)
+    if (installation) problems.push(`the installation schedule (${installation})`)
+    if (sensor) problems.push(`the sensor (${sensor})`)
     if (problems.length > 0) toast.error(`Saved, but these failed: ${problems.join('; ')}`)
+  }
+}
+
+/** Saves everything that belongs next to an entity, once the entity itself is saved. */
+function useSaveFollowUps() {
+  const savePhotos = useSavePhotoDraft()
+  const saveInstallation = useSaveInstallation()
+  const saveSensor = useSaveSensor()
+  const report = useFollowUpFailureToast()
+
+  return async (
+    meta: Meta,
+    entity: Entity,
+    extras: EntityExtras,
+    photos: PhotoDraft,
+    stored: { installation: Installation | null; sensor: SensorConfig | null },
+  ) => {
+    // Extras are only touched while the (possibly new) type supports them; after
+    // a type change they are kept but hidden, so nothing is lost by mistake.
+    const installation = hasCapability(meta, entity.type, CAP_INSTALLATION)
+      ? await saveInstallation(entity.id, extras.installation, stored.installation !== null)
+      : null
+    const sensor = hasCapability(meta, entity.type, CAP_READINGS)
+      ? await saveSensor(entity.id, extras.sensorMetric, stored.sensor)
+      : null
+    report({ photos: await savePhotos(entity.id, photos), installation, sensor })
   }
 }
 
@@ -38,9 +76,7 @@ interface CreateEntityPanelProps {
 
 export function CreateEntityPanel({ meta, latitude, longitude, onCreated, onCancel }: CreateEntityPanelProps) {
   const create = useCreateEntity()
-  const savePhotos = useSavePhotoDraft()
-  const saveInstallation = useSaveInstallation()
-  const reportFailures = useFollowUpFailureToast()
+  const saveFollowUps = useSaveFollowUps()
   const [photos, setPhotos] = useState<PhotoDraft>(EMPTY_PHOTO_DRAFT)
 
   return (
@@ -53,10 +89,10 @@ export function CreateEntityPanel({ meta, latitude, longitude, onCreated, onCanc
       pickedLongitude={longitude}
       locationHint="Click the map or drag the black pin to change the location."
       extraFields={<PhotoField existing={[]} draft={photos} onChange={setPhotos} />}
-      onSubmit={async (input, installation) => {
-        // Photos and the schedule need the new entity's id, so they follow it.
+      onSubmit={async (input, extras) => {
+        // Extras need the new entity's id, so they follow it.
         const entity = await create.mutateAsync(input)
-        reportFailures(await savePhotos(entity.id, photos), await saveInstallation(entity.id, installation, false))
+        await saveFollowUps(meta, entity, extras, photos, { installation: null, sensor: null })
         onCreated(entity)
       }}
       onCancel={onCancel}
@@ -72,21 +108,24 @@ interface EditEntityPanelProps {
 }
 
 export function EditEntityPanel({ meta, entity, onSaved, onCancel }: EditEntityPanelProps) {
-  const tracksInstallation = hasCapability(meta, entity.type, CAP_INSTALLATION)
-  const installation = useInstallation(entity.id, tracksInstallation)
+  const installation = useInstallation(entity.id, hasCapability(meta, entity.type, CAP_INSTALLATION))
+  const sensor = useSensor(entity.id, hasCapability(meta, entity.type, CAP_READINGS))
 
-  // The form reads its default values once, so wait for the stored schedule.
-  if (tracksInstallation && installation.isPending) {
+  // The form reads its default values once, so wait for the stored extras.
+  // (A disabled query stays pending, so check fetchStatus too.)
+  const loading = [installation, sensor].some((q) => q.isPending && q.fetchStatus !== 'idle')
+  const failed = [installation, sensor].find((q) => q.isError)
+  if (loading) {
     return <PanelMessage>Loading…</PanelMessage>
   }
-  if (tracksInstallation && installation.isError) {
-    return <PanelMessage>Could not load the installation schedule: {installation.error.message}</PanelMessage>
+  if (failed?.error) {
+    return <PanelMessage>Could not load this entity: {failed.error.message}</PanelMessage>
   }
   return (
     <EditEntityForm
       meta={meta}
       entity={entity}
-      installation={installation.data ?? null}
+      stored={{ installation: installation.data ?? null, sensor: sensor.data ?? null }}
       onSaved={onSaved}
       onCancel={onCancel}
     />
@@ -96,15 +135,13 @@ export function EditEntityPanel({ meta, entity, onSaved, onCancel }: EditEntityP
 function EditEntityForm({
   meta,
   entity,
-  installation,
+  stored,
   onSaved,
   onCancel,
-}: EditEntityPanelProps & { installation: Installation | null }) {
+}: EditEntityPanelProps & { stored: { installation: Installation | null; sensor: SensorConfig | null } }) {
   const update = useUpdateEntity()
   const existing = usePhotos(entity.id)
-  const savePhotos = useSavePhotoDraft()
-  const saveInstallation = useSaveInstallation()
-  const reportFailures = useFollowUpFailureToast()
+  const saveFollowUps = useSaveFollowUps()
   const [photos, setPhotos] = useState<PhotoDraft>(EMPTY_PHOTO_DRAFT)
 
   return (
@@ -112,24 +149,23 @@ function EditEntityForm({
       meta={meta}
       title="Edit entity"
       submitLabel="Save changes"
-      defaultValues={entityToFormValues(entity, installation)}
+      defaultValues={entityToFormValues(entity, stored)}
       extraFields={
-        existing.isPending ? (
-          <p className="text-sm text-gray-400">Loading photos…</p>
-        ) : existing.isError ? (
-          <p className="text-sm text-red-600">Photos could not be loaded: {existing.error.message}</p>
-        ) : (
-          <PhotoField existing={existing.data} draft={photos} onChange={setPhotos} />
-        )
+        <>
+          {/* Keys are made right away (they must be shown once), so only for a saved sensor. */}
+          {stored.sensor && <DeviceKeyPanel entityId={entity.id} sensor={stored.sensor} />}
+          {existing.isPending ? (
+            <p className="text-sm text-gray-400">Loading photos…</p>
+          ) : existing.isError ? (
+            <p className="text-sm text-red-600">Photos could not be loaded: {existing.error.message}</p>
+          ) : (
+            <PhotoField existing={existing.data} draft={photos} onChange={setPhotos} />
+          )}
+        </>
       }
-      onSubmit={async (input, schedule) => {
+      onSubmit={async (input, extras) => {
         const saved = await update.mutateAsync({ id: entity.id, input })
-        // A schedule is only touched while the (new) type supports it; after a
-        // type change it is kept but hidden, so nothing is lost by mistake.
-        const installationError = hasCapability(meta, saved.type, CAP_INSTALLATION)
-          ? await saveInstallation(entity.id, schedule, installation !== null)
-          : null
-        reportFailures(await savePhotos(entity.id, photos), installationError)
+        await saveFollowUps(meta, saved, extras, photos, stored)
         onSaved(saved)
       }}
       onCancel={onCancel}

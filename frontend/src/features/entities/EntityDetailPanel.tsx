@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
 import type { Entity } from '../../types/entity'
 import { InstallationSummary } from '../installations/InstallationSummary'
+import { SensorSummary } from '../sensors/SensorSummary'
 import { PhotoGallery } from '../photos/PhotoGallery'
 import { formatLabel, statusColor } from './labels'
 
@@ -67,6 +68,7 @@ export function EntityDetailPanel({
           </span>
           {movable && <p className="mt-1 text-xs text-gray-500">Drag the highlighted pin on the map to move it.</p>}
         </Field>
+        <SensorSummary entityId={entity.id} entityType={entity.type} />
         <InstallationSummary entityId={entity.id} entityType={entity.type} />
         <Field label="Photos">
           <PhotoGallery entityId={entity.id} entityName={entity.name} />

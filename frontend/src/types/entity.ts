@@ -21,6 +21,16 @@ export interface Meta {
   statuses: string[]
   /** Features only some types have, e.g. { facility: ["installation"] }. */
   capabilities: Record<string, string[]>
+  /** What sensors can measure; units and valid ranges come from the backend. */
+  metrics: MetricSpec[]
+}
+
+export interface MetricSpec {
+  id: string
+  label: string
+  unit: string
+  min: number
+  max: number
 }
 
 /** Body for POST /api/entities and PUT /api/entities/{id}. */

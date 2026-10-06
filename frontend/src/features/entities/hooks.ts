@@ -9,6 +9,7 @@ import {
 } from '../../api/entities'
 import type { Entity, EntityFilter, EntityInput, LocationInput } from '../../types/entity'
 import { installationKeys } from '../installations/hooks'
+import { sensorKeys } from '../sensors/hooks'
 
 export const metaKey = ['meta'] as const
 
@@ -48,6 +49,7 @@ export function useUpdateEntity() {
       Promise.all([
         queryClient.invalidateQueries({ queryKey: entityKeys.all }),
         queryClient.invalidateQueries({ queryKey: installationKeys.all }),
+        queryClient.invalidateQueries({ queryKey: sensorKeys.all }),
       ]),
   })
 }
@@ -62,6 +64,7 @@ export function useDeleteEntity() {
       Promise.all([
         queryClient.invalidateQueries({ queryKey: entityKeys.all }),
         queryClient.invalidateQueries({ queryKey: installationKeys.all }),
+        queryClient.invalidateQueries({ queryKey: sensorKeys.all }),
       ]),
   })
 }

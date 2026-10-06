@@ -2,8 +2,9 @@ import { z } from 'zod'
 import type { Entity, Meta } from '../types/entity'
 import { attributesSchema, toAttributesValue } from './attributes'
 import { emptyInstallationValue, installationSchema, toInstallationValue } from './installation'
-import type { Installation } from '../types/installation'
-import { CAP_INSTALLATION, hasCapability } from './capabilities'
+import type { Installation, InstallationInput } from '../types/installation'
+import type { SensorConfig } from '../types/sensor'
+import { CAP_INSTALLATION, CAP_READINGS, hasCapability } from './capabilities'
 
 // Mirrors the backend rules in backend/internal/validation. Messages match the
 // backend so client and server errors read the same.
@@ -68,29 +69,54 @@ export function createEntityFormSchema(meta: Meta) {
       target_on: z.string(),
       completed_on: z.string(),
     }),
+    sensor: z.object({ metric: z.string() }),
   })
-    .transform(({ installation, ...entity }, ctx) => {
-      if (!hasCapability(meta, entity.type, CAP_INSTALLATION)) {
-        return { entity, installation: null }
-      }
-      const result = installationSchema.safeParse(installation)
-      if (!result.success) {
-        for (const issue of result.error.issues) {
-          ctx.addIssue({ code: 'custom', path: ['installation', ...issue.path], message: issue.message })
+    .transform(({ installation, sensor, ...entity }, ctx) => {
+      const extras: EntityExtras = { installation: null, sensorMetric: null }
+
+      if (hasCapability(meta, entity.type, CAP_INSTALLATION)) {
+        const result = installationSchema.safeParse(installation)
+        if (result.success) {
+          extras.installation = result.data
+        } else {
+          for (const issue of result.error.issues) {
+            ctx.addIssue({ code: 'custom', path: ['installation', ...issue.path], message: issue.message })
+          }
         }
-        return z.NEVER
       }
-      return { entity, installation: result.data }
+
+      if (hasCapability(meta, entity.type, CAP_READINGS)) {
+        const metric = sensor.metric.trim()
+        // An empty choice means "no sensor".
+        if (metric !== '' && !meta.metrics.some((m) => m.id === metric)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['sensor', 'metric'],
+            message: `must be one of: ${meta.metrics.map((m) => m.id).join(', ')}`,
+          })
+        }
+        extras.sensorMetric = metric === '' ? null : metric
+      }
+
+      if (ctx.issues.length > 0) return z.NEVER
+      return { entity, extras }
     })
+}
+
+/**
+ * Data saved next to the entity, only for types with the matching capability:
+ * the installation schedule to PUT (null = not tracked) and the sensor
+ * metric (null = no sensor).
+ */
+export interface EntityExtras {
+  installation: InstallationInput | null
+  sensorMetric: string | null
 }
 
 export type EntityFormSchema = ReturnType<typeof createEntityFormSchema>
 /** Raw form values (attributes as editor rows). */
 export type EntityFormValues = z.input<EntityFormSchema>
-/**
- * Parsed values: the EntityInput to send, and the installation to PUT (null
- * when not tracked or when the type has no installation capability).
- */
+/** Parsed values: the EntityInput to send, and the extras saved after it. */
 export type EntityFormOutput = z.output<EntityFormSchema>
 
 export function emptyFormValues(latitude: number, longitude: number): EntityFormValues {
@@ -103,10 +129,17 @@ export function emptyFormValues(latitude: number, longitude: number): EntityForm
     description: '',
     attributes: toAttributesValue(null),
     installation: emptyInstallationValue(),
+    sensor: { metric: '' },
   }
 }
 
-export function entityToFormValues(entity: Entity, installation: Installation | null = null): EntityFormValues {
+/** Stored data of the entity's extras, used as the edit form's starting values. */
+export interface StoredExtras {
+  installation?: Installation | null
+  sensor?: SensorConfig | null
+}
+
+export function entityToFormValues(entity: Entity, { installation = null, sensor = null }: StoredExtras = {}): EntityFormValues {
   return {
     name: entity.name,
     type: entity.type,
@@ -116,5 +149,6 @@ export function entityToFormValues(entity: Entity, installation: Installation | 
     description: entity.description,
     attributes: toAttributesValue(entity.attributes),
     installation: toInstallationValue(installation),
+    sensor: { metric: sensor?.metric ?? '' },
   }
 }
