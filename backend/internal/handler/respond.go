@@ -52,6 +52,10 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusNotFound, "not_found", "photo not found")
 		return
 	}
+	if errors.Is(err, model.ErrNoInstallation) {
+		writeError(w, http.StatusBadRequest, "invalid_request", model.ErrNoInstallation.Error())
+		return
+	}
 	slog.Error("internal error", "error", err, "method", r.Method, "path", r.URL.Path)
 	writeError(w, http.StatusInternalServerError, "internal_error", "an unexpected error occurred")
 }

@@ -20,4 +20,7 @@ var (
 	ErrUnsupportedPhoto = errors.New("unsupported photo type")
 	// ErrTooManyPhotos is returned when an entity already has MaxPhotosPerEntity photos.
 	ErrTooManyPhotos = errors.New("too many photos")
+	// ErrNoInstallation is returned for installation requests on an entity
+	// whose type does not have the installation capability.
+	ErrNoInstallation = errors.New("this entity type has no installation data")
 )

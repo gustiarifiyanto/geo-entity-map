@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gustiarifiyanto/geo-entity-map/backend/internal/model"
 )
@@ -309,4 +310,56 @@ func emailOfLength(n int) string {
 	b, c := strings.Repeat("b", 63), strings.Repeat("c", 63)
 	fixed := len(local) + len("@") + len(b) + len(".") + len(c) + len(".") + len(".com")
 	return local + "@" + b + "." + c + "." + strings.Repeat("d", n-fixed) + ".com"
+}
+
+func strPtr(s string) *string { return &s }
+
+func TestInstallation(t *testing.T) {
+	today := time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		in   model.InstallationInput
+		want FieldErrors
+	}{
+		{"valid, not completed", model.InstallationInput{StartedOn: "2026-10-01", TargetOn: "2026-10-20"}, nil},
+		{"valid, completed today", model.InstallationInput{StartedOn: "2026-10-01", TargetOn: "2026-10-20", CompletedOn: strPtr("2026-10-06")}, nil},
+		{"same day start, target and completion", model.InstallationInput{StartedOn: "2026-10-06", TargetOn: "2026-10-06", CompletedOn: strPtr("2026-10-06")}, nil},
+		{"start in the future is allowed", model.InstallationInput{StartedOn: "2026-12-01", TargetOn: "2026-12-31"}, nil},
+		{"empty completion means not completed", model.InstallationInput{StartedOn: "2026-10-01", TargetOn: "2026-10-20", CompletedOn: strPtr("  ")}, nil},
+		{"dates are trimmed", model.InstallationInput{StartedOn: " 2026-10-01 ", TargetOn: "2026-10-20 "}, nil},
+		{"both missing", model.InstallationInput{}, FieldErrors{
+			"started_on": "is required",
+			"target_on":  "is required",
+		}},
+		{"bad formats", model.InstallationInput{StartedOn: "01-10-2026", TargetOn: "2026-1-5", CompletedOn: strPtr("2026-10-06T00:00:00Z")}, FieldErrors{
+			"started_on":   "must be a date (YYYY-MM-DD)",
+			"target_on":    "must be a date (YYYY-MM-DD)",
+			"completed_on": "must be a date (YYYY-MM-DD)",
+		}},
+		{"day that does not exist", model.InstallationInput{StartedOn: "2026-02-30", TargetOn: "2026-10-20"}, FieldErrors{
+			"started_on": "must be a date (YYYY-MM-DD)",
+		}},
+		{"target before start", model.InstallationInput{StartedOn: "2026-10-10", TargetOn: "2026-10-09"}, FieldErrors{
+			"target_on": "must be on or after the start date",
+		}},
+		{"completed before start", model.InstallationInput{StartedOn: "2026-10-03", TargetOn: "2026-10-20", CompletedOn: strPtr("2026-10-02")}, FieldErrors{
+			"completed_on": "must be on or after the start date",
+		}},
+		{"completed tomorrow", model.InstallationInput{StartedOn: "2026-10-01", TargetOn: "2026-10-20", CompletedOn: strPtr("2026-10-07")}, FieldErrors{
+			"completed_on": "cannot be in the future",
+		}},
+	}
+
+	v := newValidator(t)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := v.Installation(&tc.in, today)
+			if err != nil {
+				t.Fatalf("Installation: unexpected error: %v", err)
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("Installation() = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }

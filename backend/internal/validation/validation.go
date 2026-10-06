@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 
@@ -56,6 +57,13 @@ func New() (*Validator, error) {
 		},
 		// bcrypt only uses the first 72 bytes, so longer passwords are rejected
 		// instead of silently truncated. "max" would count characters, not bytes.
+		// A real calendar day in YYYY-MM-DD; time.Parse rejects e.g. 2026-02-30.
+		"date": func(fl validator.FieldLevel) bool {
+			s := fl.Field().String()
+			t, err := time.Parse(model.DateLayout, s)
+			// Round trip so only the canonical form (zero-padded) is accepted.
+			return err == nil && t.Format(model.DateLayout) == s
+		},
 		"max_bytes": func(fl validator.FieldLevel) bool {
 			limit, err := strconv.Atoi(fl.Param())
 			return err == nil && len(fl.Field().String()) <= limit
@@ -101,6 +109,39 @@ func (val *Validator) Login(in *model.LoginInput) (FieldErrors, error) {
 	return val.check(in)
 }
 
+// Installation normalizes in and validates it: each date on its own, then the
+// order of the dates and that completion is not after today (a calendar day
+// in the app's time zone). It returns nil when the input is valid.
+func (val *Validator) Installation(in *model.InstallationInput, today time.Time) (FieldErrors, error) {
+	in.Normalize()
+	fields, err := val.check(in)
+	if err != nil || fields != nil {
+		return fields, err
+	}
+
+	// The struct rules guarantee these parse.
+	started, _ := time.Parse(model.DateLayout, in.StartedOn)
+	target, _ := time.Parse(model.DateLayout, in.TargetOn)
+	fields = FieldErrors{}
+	if target.Before(started) {
+		fields["target_on"] = "must be on or after the start date"
+	}
+	if in.CompletedOn != nil {
+		completed, _ := time.Parse(model.DateLayout, *in.CompletedOn)
+		todayDate, _ := time.Parse(model.DateLayout, today.Format(model.DateLayout))
+		switch {
+		case completed.Before(started):
+			fields["completed_on"] = "must be on or after the start date"
+		case completed.After(todayDate):
+			fields["completed_on"] = "cannot be in the future"
+		}
+	}
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	return fields, nil
+}
+
 // Filter validates list filters. It returns nil when the filter is valid.
 func (val *Validator) Filter(f *model.EntityFilter) (FieldErrors, error) {
 	return val.check(f)
@@ -134,6 +175,8 @@ func message(fe validator.FieldError) string {
 		return fmt.Sprintf("must be at most %s bytes", fe.Param())
 	case "email":
 		return "must be a valid email address"
+	case "date":
+		return "must be a date (YYYY-MM-DD)"
 	case "entity_type":
 		return "must be one of: " + join(model.EntityTypes)
 	case "entity_status":

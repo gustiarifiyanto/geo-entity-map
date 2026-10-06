@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+	_ "time/tzdata" // embeds the time zone database, so APP_TIMEZONE works on Windows too
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -30,12 +31,18 @@ type config struct {
 	adminEmail    string
 	adminPassword string
 	uploadDir     string
+	// timezone decides which calendar day "today" is for installation status.
+	timezone *time.Location
 }
 
 func loadConfig() (config, error) {
 	secure, err := strconv.ParseBool(getenv("COOKIE_SECURE", "false"))
 	if err != nil {
 		return config{}, fmt.Errorf("COOKIE_SECURE must be true or false: %w", err)
+	}
+	tz, err := time.LoadLocation(getenv("APP_TIMEZONE", "Asia/Jakarta"))
+	if err != nil {
+		return config{}, fmt.Errorf("APP_TIMEZONE must be an IANA time zone such as Asia/Jakarta: %w", err)
 	}
 	return config{
 		port:          getenv("PORT", "8080"),
@@ -44,6 +51,7 @@ func loadConfig() (config, error) {
 		adminEmail:    os.Getenv("ADMIN_EMAIL"),
 		adminPassword: os.Getenv("ADMIN_PASSWORD"),
 		uploadDir:     getenv("UPLOAD_DIR", "./data/uploads"),
+		timezone:      tz,
 	}, nil
 }
 
@@ -93,6 +101,7 @@ func run() error {
 	}
 	entities := service.NewEntityService(repository.NewEntityRepository(db), files)
 	photos := service.NewPhotoService(repository.NewPhotoRepository(db), files, entities)
+	installations := service.NewInstallationService(repository.NewInstallationRepository(db), entities, cfg.timezone)
 	auth, err := service.NewAuthService(repository.NewUserRepository(db), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -100,10 +109,16 @@ func run() error {
 	if err := seedAdmin(ctx, cfg, auth, val); err != nil {
 		return err
 	}
+	router := handler.NewRouter(handler.Services{
+		Entities:      entities,
+		Auth:          auth,
+		Photos:        photos,
+		Installations: installations,
+	}, val, handler.Options{SecureCookie: cfg.cookieSecure})
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.port,
-		Handler:           handler.NewRouter(entities, auth, photos, val, handler.Options{SecureCookie: cfg.cookieSecure}),
+		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -112,7 +127,7 @@ func run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("server listening", "addr", srv.Addr, "db", cfg.dbPath, "uploads", cfg.uploadDir)
+		slog.Info("server listening", "addr", srv.Addr, "db", cfg.dbPath, "uploads", cfg.uploadDir, "timezone", cfg.timezone.String())
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}

@@ -46,3 +46,19 @@ func TestEntityStatusValid(t *testing.T) {
 		}
 	}
 }
+
+func TestTypeCapabilities(t *testing.T) {
+	if !TypeFacility.Has(CapInstallation) {
+		t.Error("facility should have the installation capability")
+	}
+	for _, typ := range []EntityType{TypeVehicle, TypeIoTDevice, "unknown"} {
+		if typ.Has(CapInstallation) {
+			t.Errorf("%q should not have the installation capability", typ)
+		}
+	}
+	for typ := range TypeCapabilities {
+		if !typ.Valid() {
+			t.Errorf("TypeCapabilities lists unknown type %q", typ)
+		}
+	}
+}

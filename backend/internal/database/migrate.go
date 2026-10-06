@@ -55,6 +55,16 @@ CREATE TABLE IF NOT EXISTS entity_photos (
 	created_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_entity_photos_entity_id ON entity_photos (entity_id);
+
+-- Installation schedule of facilities. Dates are calendar days (YYYY-MM-DD);
+-- the status is computed from them, never stored.
+CREATE TABLE IF NOT EXISTS facility_installations (
+	entity_id    TEXT PRIMARY KEY REFERENCES entities (id) ON DELETE CASCADE,
+	started_on   TEXT NOT NULL,
+	target_on    TEXT NOT NULL,
+	completed_on TEXT,
+	updated_at   TEXT NOT NULL
+);
 `
 
 // Migrate creates the schema if it does not exist and adds columns that

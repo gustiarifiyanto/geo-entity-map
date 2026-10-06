@@ -16,17 +16,20 @@ type Options struct {
 	SecureCookie bool
 }
 
+// Services are the business services the API is built on.
+type Services struct {
+	Entities      *service.EntityService
+	Auth          *service.AuthService
+	Photos        *service.PhotoService
+	Installations *service.InstallationService
+}
+
 // NewRouter returns the HTTP handler for the whole API.
-func NewRouter(
-	entities *service.EntityService,
-	auth *service.AuthService,
-	photos *service.PhotoService,
-	val *validation.Validator,
-	opts Options,
-) http.Handler {
-	h := &entityHandler{svc: entities, val: val}
-	a := &authHandler{svc: auth, val: val, secureCookie: opts.SecureCookie}
-	p := &photoHandler{svc: photos}
+func NewRouter(svc Services, val *validation.Validator, opts Options) http.Handler {
+	h := &entityHandler{svc: svc.Entities, val: val}
+	a := &authHandler{svc: svc.Auth, val: val, secureCookie: opts.SecureCookie}
+	p := &photoHandler{svc: svc.Photos}
+	inst := &installationHandler{svc: svc.Installations, val: val}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
@@ -62,8 +65,12 @@ func NewRouter(
 					r.With(requireAdmin).Patch("/location", h.updateLocation)
 					r.Get("/photos", p.list)
 					r.With(requireAdmin).Post("/photos", p.upload)
+					r.Get("/installation", inst.get)
+					r.With(requireAdmin).Put("/installation", inst.put)
+					r.With(requireAdmin).Delete("/installation", inst.delete)
 				})
 			})
+			r.Get("/installations", inst.list)
 			r.Route("/photos/{photoID}", func(r chi.Router) {
 				r.Get("/", p.get)
 				r.With(requireAdmin).Delete("/", p.delete)
