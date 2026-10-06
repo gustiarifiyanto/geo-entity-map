@@ -111,6 +111,7 @@ func run() error {
 	photos := service.NewPhotoService(repository.NewPhotoRepository(db), files, entities)
 	installations := service.NewInstallationService(repository.NewInstallationRepository(db), entities, cfg.timezone)
 	sensors := service.NewSensorService(repository.NewSensorRepository(db), entities)
+	geofences := service.NewGeofenceService(repository.NewGeofenceRepository(db), entities)
 	auth, err := service.NewAuthService(repository.NewUserRepository(db), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -124,6 +125,7 @@ func run() error {
 		Photos:        photos,
 		Installations: installations,
 		Sensors:       sensors,
+		Geofences:     geofences,
 	}, val, handler.Options{SecureCookie: cfg.cookieSecure})
 
 	srv := &http.Server{

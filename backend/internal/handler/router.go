@@ -23,6 +23,7 @@ type Services struct {
 	Photos        *service.PhotoService
 	Installations *service.InstallationService
 	Sensors       *service.SensorService
+	Geofences     *service.GeofenceService
 }
 
 // NewRouter returns the HTTP handler for the whole API.
@@ -32,6 +33,7 @@ func NewRouter(svc Services, val *validation.Validator, opts Options) http.Handl
 	p := &photoHandler{svc: svc.Photos}
 	inst := &installationHandler{svc: svc.Installations, val: val}
 	sens := &sensorHandler{svc: svc.Sensors, val: val}
+	geo := &geofenceHandler{svc: svc.Geofences, val: val}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
@@ -78,9 +80,13 @@ func NewRouter(svc Services, val *validation.Validator, opts Options) http.Handl
 					r.With(requireAdmin).Delete("/sensor", sens.delete)
 					r.With(requireAdmin).Post("/sensor/key", sens.createKey)
 					r.Get("/readings", sens.readings)
+					r.Get("/geofence", geo.get)
+					r.With(requireAdmin).Put("/geofence", geo.put)
+					r.With(requireAdmin).Delete("/geofence", geo.delete)
 				})
 			})
 			r.Get("/installations", inst.list)
+			r.Get("/geofences", geo.list)
 			r.Route("/photos/{photoID}", func(r chi.Router) {
 				r.Get("/", p.get)
 				r.With(requireAdmin).Delete("/", p.delete)

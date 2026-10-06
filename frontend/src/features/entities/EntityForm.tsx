@@ -12,7 +12,8 @@ import {
 import { inputClass } from '../../components/formStyles'
 import type { EntityInput, Meta } from '../../types/entity'
 import { formatLabel } from './labels'
-import { CAP_INSTALLATION, CAP_READINGS, hasCapability } from '../../schemas/capabilities'
+import { CAP_GEOFENCE, CAP_INSTALLATION, CAP_READINGS, hasCapability } from '../../schemas/capabilities'
+import { GeofenceFields } from '../geofences/GeofenceFields'
 import { SensorFields } from '../sensors/SensorFields'
 import { InstallationFields } from '../installations/InstallationFields'
 import { AttributesEditor, type AttributesErrors } from './AttributesEditor'
@@ -27,6 +28,8 @@ interface EntityFormProps {
   pickedLatitude?: number
   pickedLongitude?: number
   locationHint?: string
+  /** The entity being edited; undefined for a new one. */
+  entityId?: string
   /** Extra controls shown after the regular fields (e.g. the photo picker). */
   extraFields?: ReactNode
   /**
@@ -45,6 +48,7 @@ export function EntityForm({
   pickedLatitude,
   pickedLongitude,
   locationHint,
+  entityId,
   extraFields,
   onSubmit,
   onCancel,
@@ -80,6 +84,7 @@ export function EntityForm({
   const installationEnabled = useWatch({ control, name: 'installation.enabled' })
   const showInstallation = hasCapability(meta, type, CAP_INSTALLATION)
   const showSensor = hasCapability(meta, type, CAP_READINGS)
+  const showGeofence = hasCapability(meta, type, CAP_GEOFENCE)
 
   const submit = handleSubmit(async ({ entity, extras }) => {
     try {
@@ -231,6 +236,16 @@ export function EntityForm({
         )}
 
         {showSensor && <SensorFields register={register} errors={errors.sensor} metrics={meta.metrics} />}
+
+        {showGeofence && (
+          <GeofenceFields
+            entityId={entityId ?? null}
+            register={register}
+            control={control}
+            setValue={setValue}
+            errors={errors.geofence}
+          />
+        )}
 
         {extraFields}
       </div>

@@ -52,7 +52,7 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusNotFound, "not_found", "photo not found")
 		return
 	}
-	for _, badRequest := range []error{model.ErrNoInstallation, model.ErrNoReadings, model.ErrNoSensorMetric} {
+	for _, badRequest := range []error{model.ErrNoInstallation, model.ErrNoReadings, model.ErrNoGeofence, model.ErrNoSensorMetric} {
 		if errors.Is(err, badRequest) {
 			writeError(w, http.StatusBadRequest, "invalid_request", badRequest.Error())
 			return

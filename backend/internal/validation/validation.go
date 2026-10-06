@@ -58,6 +58,10 @@ func New() (*Validator, error) {
 		// bcrypt only uses the first 72 bytes, so longer passwords are rejected
 		// instead of silently truncated. "max" would count characters, not bytes.
 		// A real calendar day in YYYY-MM-DD; time.Parse rejects e.g. 2026-02-30.
+		"radius": func(fl validator.FieldLevel) bool {
+			r := fl.Field().Float()
+			return !math.IsNaN(r) && r >= model.MinGeofenceRadius && r <= model.MaxGeofenceRadius
+		},
 		"metric": func(fl validator.FieldLevel) bool {
 			return model.Metric(fl.Field().String()).Valid()
 		},
@@ -153,6 +157,11 @@ func (val *Validator) Installation(in *model.InstallationInput, today time.Time)
 	return fields, nil
 }
 
+// Geofence validates an operating zone. It returns nil when valid.
+func (val *Validator) Geofence(in *model.GeofenceInput) (FieldErrors, error) {
+	return val.check(in)
+}
+
 // Sensor validates the choice of a sensor metric. It returns nil when valid.
 func (val *Validator) Sensor(in *model.SensorInput) (FieldErrors, error) {
 	in.Metric = model.Metric(strings.TrimSpace(string(in.Metric)))
@@ -230,6 +239,8 @@ func message(fe validator.FieldError) string {
 		return fmt.Sprintf("must be at most %s bytes", fe.Param())
 	case "email":
 		return "must be a valid email address"
+	case "radius":
+		return fmt.Sprintf("must be between %d and %d", model.MinGeofenceRadius, model.MaxGeofenceRadius)
 	case "metric":
 		return "must be one of: " + join(metricIDs())
 	case "finite":

@@ -26,6 +26,9 @@ var (
 	// ErrNoReadings is returned for sensor requests on an entity whose type
 	// does not have the readings capability.
 	ErrNoReadings = errors.New("this entity type has no sensor data")
+	// ErrNoGeofence is returned for zone requests on an entity whose type
+	// does not have the geofence capability.
+	ErrNoGeofence = errors.New("this entity type has no operating zone")
 	// ErrNoSensorMetric is returned when a device key is requested before a metric is chosen.
 	ErrNoSensorMetric = errors.New("choose the sensor metric first")
 	// ErrInvalidDeviceKey is returned for a missing or wrong device API key.

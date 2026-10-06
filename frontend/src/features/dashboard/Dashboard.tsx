@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react'
 import type { Entity, Meta } from '../../types/entity'
 import { formatLabel, statusColor } from '../entities/labels'
-import { CAP_INSTALLATION } from '../../schemas/capabilities'
+import { CAP_GEOFENCE, CAP_INSTALLATION } from '../../schemas/capabilities'
+import { formatDistance } from '../geofences/distance'
+import { useGeofences } from '../geofences/hooks'
 import { useInstallations } from '../installations/hooks'
 import { daysText, installationStatusColor, installationStatusLabel, installationStatusOrder } from '../installations/status'
 import { useAdminStats } from './hooks'
@@ -23,6 +25,9 @@ export function Dashboard({ entities, meta, showUserStats }: DashboardProps) {
       <EntitySummary entities={entities} meta={meta} />
       {Object.values(meta?.capabilities ?? {}).some((caps) => caps.includes(CAP_INSTALLATION)) && (
         <InstallationOverview entities={entities} />
+      )}
+      {Object.values(meta?.capabilities ?? {}).some((caps) => caps.includes(CAP_GEOFENCE)) && (
+        <ZoneOverview entities={entities} />
       )}
       {showUserStats && <UserSummary />}
     </div>
@@ -240,6 +245,75 @@ function InstallationOverview({ entities }: { entities: Entity[] | undefined }) 
             </ul>
           )}
         </Card>
+      </div>
+    </Section>
+  )
+}
+
+/** Operating zones: how many entities are outside, and which (farthest first). */
+function ZoneOverview({ entities }: { entities: Entity[] | undefined }) {
+  const zones = useGeofences()
+
+  if (zones.isPending || !entities) {
+    return (
+      <Section title="Operating zones">
+        <p className="text-sm text-gray-500">Loading…</p>
+      </Section>
+    )
+  }
+  if (zones.isError) {
+    return (
+      <Section title="Operating zones">
+        <div role="alert" className="flex items-center gap-3 text-sm text-red-700">
+          <span>{zones.error.message}</span>
+          <button type="button" onClick={() => void zones.refetch()} className="font-medium underline">
+            Retry
+          </button>
+        </div>
+      </Section>
+    )
+  }
+  if (zones.data.length === 0) {
+    return (
+      <Section title="Operating zones">
+        <p className="text-sm text-gray-500">No operating zones yet. Add one when creating or editing a vehicle.</p>
+      </Section>
+    )
+  }
+
+  const names = new Map(entities.map((e) => [e.id, e.name]))
+  // The API lists entities outside their zone first, farthest past the edge first.
+  const outside = zones.data.filter((z) => !z.inside)
+
+  return (
+    <Section title="Operating zones">
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatTile
+          label="Outside their zone"
+          value={outside.length}
+          hint={`Of ${zones.data.length} with a zone. Based on each pin's current position.`}
+        />
+        <div className="md:col-span-2">
+          <Card title="Farthest outside">
+            {outside.length === 0 ? (
+              <p className="text-xs text-gray-500">Everything is inside its zone.</p>
+            ) : (
+              <ul className="space-y-2 text-xs">
+                {outside.slice(0, 5).map((z) => (
+                  <li key={z.entity_id} className="flex items-baseline justify-between gap-3">
+                    <span className="min-w-0 truncate text-gray-700" title={names.get(z.entity_id)}>
+                      {names.get(z.entity_id) ?? 'Unknown entity'}
+                    </span>
+                    <span className="shrink-0 font-medium text-red-600">
+                      {formatDistance(z.distance_m - z.radius_m)} outside
+                    </span>
+                  </li>
+                ))}
+                {outside.length > 5 && <li className="text-gray-400">and {outside.length - 5} more</li>}
+              </ul>
+            )}
+          </Card>
+        </div>
       </div>
     </Section>
   )

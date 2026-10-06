@@ -4,7 +4,9 @@ import { attributesSchema, toAttributesValue } from './attributes'
 import { emptyInstallationValue, installationSchema, toInstallationValue } from './installation'
 import type { Installation, InstallationInput } from '../types/installation'
 import type { SensorConfig } from '../types/sensor'
-import { CAP_INSTALLATION, CAP_READINGS, hasCapability } from './capabilities'
+import { CAP_GEOFENCE, CAP_INSTALLATION, CAP_READINGS, hasCapability } from './capabilities'
+import { geofenceSchema, numberOrNaN, toGeofenceValue } from './geofence'
+import type { Geofence, GeofenceInput } from '../types/geofence'
 
 // Mirrors the backend rules in backend/internal/validation. Messages match the
 // backend so client and server errors read the same.
@@ -70,9 +72,15 @@ export function createEntityFormSchema(meta: Meta) {
       completed_on: z.string(),
     }),
     sensor: z.object({ metric: z.string() }),
+    geofence: z.object({
+      enabled: z.boolean(),
+      center_latitude: numberOrNaN,
+      center_longitude: numberOrNaN,
+      radius_m: numberOrNaN,
+    }),
   })
-    .transform(({ installation, sensor, ...entity }, ctx) => {
-      const extras: EntityExtras = { installation: null, sensorMetric: null }
+    .transform(({ installation, sensor, geofence, ...entity }, ctx) => {
+      const extras: EntityExtras = { installation: null, sensorMetric: null, geofence: null }
 
       if (hasCapability(meta, entity.type, CAP_INSTALLATION)) {
         const result = installationSchema.safeParse(installation)
@@ -98,6 +106,18 @@ export function createEntityFormSchema(meta: Meta) {
         extras.sensorMetric = metric === '' ? null : metric
       }
 
+
+      if (hasCapability(meta, entity.type, CAP_GEOFENCE)) {
+        const result = geofenceSchema.safeParse(geofence)
+        if (result.success) {
+          extras.geofence = result.data
+        } else {
+          for (const issue of result.error.issues) {
+            ctx.addIssue({ code: 'custom', path: ['geofence', ...issue.path], message: issue.message })
+          }
+        }
+      }
+
       if (ctx.issues.length > 0) return z.NEVER
       return { entity, extras }
     })
@@ -111,6 +131,8 @@ export function createEntityFormSchema(meta: Meta) {
 export interface EntityExtras {
   installation: InstallationInput | null
   sensorMetric: string | null
+  /** The operating zone to PUT; null = no zone. */
+  geofence: GeofenceInput | null
 }
 
 export type EntityFormSchema = ReturnType<typeof createEntityFormSchema>
@@ -130,6 +152,7 @@ export function emptyFormValues(latitude: number, longitude: number): EntityForm
     attributes: toAttributesValue(null),
     installation: emptyInstallationValue(),
     sensor: { metric: '' },
+    geofence: toGeofenceValue(null, latitude, longitude),
   }
 }
 
@@ -137,9 +160,10 @@ export function emptyFormValues(latitude: number, longitude: number): EntityForm
 export interface StoredExtras {
   installation?: Installation | null
   sensor?: SensorConfig | null
+  geofence?: Geofence | null
 }
 
-export function entityToFormValues(entity: Entity, { installation = null, sensor = null }: StoredExtras = {}): EntityFormValues {
+export function entityToFormValues(entity: Entity, { installation = null, sensor = null, geofence = null }: StoredExtras = {}): EntityFormValues {
   return {
     name: entity.name,
     type: entity.type,
@@ -150,5 +174,6 @@ export function entityToFormValues(entity: Entity, { installation = null, sensor
     attributes: toAttributesValue(entity.attributes),
     installation: toInstallationValue(installation),
     sensor: { metric: sensor?.metric ?? '' },
+    geofence: toGeofenceValue(geofence, entity.latitude, entity.longitude),
   }
 }

@@ -4,6 +4,7 @@ import type { Meta } from '../types/entity'
 // from GET /api/meta, so no entity type is hardcoded here.
 export const CAP_INSTALLATION = 'installation'
 export const CAP_READINGS = 'readings'
+export const CAP_GEOFENCE = 'geofence'
 
 export function hasCapability(meta: Meta | undefined, type: string, capability: string): boolean {
   return meta?.capabilities[type]?.includes(capability) ?? false

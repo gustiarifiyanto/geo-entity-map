@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
 import type { Entity } from '../../types/entity'
+import { GeofenceSummary } from '../geofences/GeofenceSummary'
 import { InstallationSummary } from '../installations/InstallationSummary'
 import { SensorSummary } from '../sensors/SensorSummary'
 import { PhotoGallery } from '../photos/PhotoGallery'
@@ -68,6 +69,7 @@ export function EntityDetailPanel({
           </span>
           {movable && <p className="mt-1 text-xs text-gray-500">Drag the highlighted pin on the map to move it.</p>}
         </Field>
+        <GeofenceSummary entityId={entity.id} entityType={entity.type} />
         <SensorSummary entityId={entity.id} entityType={entity.type} />
         <InstallationSummary entityId={entity.id} entityType={entity.type} />
         <Field label="Photos">

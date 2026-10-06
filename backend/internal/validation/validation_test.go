@@ -426,3 +426,43 @@ func TestReading(t *testing.T) {
 		})
 	}
 }
+
+func TestGeofence(t *testing.T) {
+	zone := func(lat, lng, r *float64) model.GeofenceInput {
+		return model.GeofenceInput{CenterLatitude: lat, CenterLongitude: lng, RadiusM: r}
+	}
+	tests := []struct {
+		name string
+		in   model.GeofenceInput
+		want FieldErrors
+	}{
+		{"valid", zone(ptr(-6.2), ptr(106.8), ptr(5000)), nil},
+		{"smallest radius", zone(ptr(0), ptr(0), ptr(100)), nil},
+		{"largest radius", zone(ptr(0), ptr(0), ptr(50_000)), nil},
+		{"center on the boundaries", zone(ptr(90), ptr(-180), ptr(1000)), nil},
+		{"radius 99.9", zone(ptr(0), ptr(0), ptr(99.9)), FieldErrors{"radius_m": "must be between 100 and 50000"}},
+		{"radius 50000.1", zone(ptr(0), ptr(0), ptr(50_000.1)), FieldErrors{"radius_m": "must be between 100 and 50000"}},
+		{"radius NaN", zone(ptr(0), ptr(0), ptr(math.NaN())), FieldErrors{"radius_m": "must be between 100 and 50000"}},
+		{"center out of range", zone(ptr(90.0001), ptr(180.0001), ptr(1000)), FieldErrors{
+			"center_latitude":  "must be between -90 and 90",
+			"center_longitude": "must be between -180 and 180",
+		}},
+		{"all missing", model.GeofenceInput{}, FieldErrors{
+			"center_latitude":  "is required",
+			"center_longitude": "is required",
+			"radius_m":         "is required",
+		}},
+	}
+	v := newValidator(t)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := v.Geofence(&tc.in)
+			if err != nil {
+				t.Fatalf("Geofence: unexpected error: %v", err)
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("Geofence() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

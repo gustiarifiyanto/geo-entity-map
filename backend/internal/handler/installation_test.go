@@ -58,7 +58,7 @@ func TestMetaCapabilities(t *testing.T) {
 		}
 	}](t, rec).Data.Capabilities
 	if !slices.Equal(got["facility"], []string{"installation"}) || !slices.Equal(got["iot_device"], []string{"installation", "readings"}) ||
-		len(got["vehicle"]) != 0 || len(got) != len(model.TypeCapabilities) {
+		!slices.Equal(got["vehicle"], []string{"geofence"}) || len(got) != len(model.TypeCapabilities) {
 		t.Errorf("capabilities = %v", got)
 	}
 }

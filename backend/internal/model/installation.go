@@ -20,6 +20,7 @@ const (
 var TypeCapabilities = map[EntityType][]Capability{
 	TypeIoTDevice: {CapInstallation, CapReadings},
 	TypeFacility:  {CapInstallation},
+	TypeVehicle:   {CapGeofence},
 }
 
 // Has reports whether entity type t has capability c.

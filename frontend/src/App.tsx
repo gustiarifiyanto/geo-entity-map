@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AppBar, type View } from './components/AppBar'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { useToast } from './components/toast/context'
@@ -11,6 +11,9 @@ import { CreateEntityPanel, EditEntityPanel } from './features/entities/EntityFo
 import { EntityMap } from './features/entities/EntityMap'
 import { MapHeader } from './features/entities/MapHeader'
 import { useEntities, useMeta, useUpdateEntityLocation } from './features/entities/hooks'
+import { distanceMeters, formatDistance } from './features/geofences/distance'
+import { useGeofences } from './features/geofences/hooks'
+import { ZoneEditorContext, type ZoneEditor, type ZonePreview } from './features/geofences/zoneEditor'
 import { ADMIN_ROLE, type User } from './types/auth'
 import type { Entity } from './types/entity'
 
@@ -64,6 +67,28 @@ function MapScreen({ user }: { user: User }) {
   const [deleteTarget, setDeleteTarget] = useState<Entity | null>(null)
   const updateLocation = useUpdateEntityLocation()
   const toast = useToast()
+  const zones = useGeofences()
+
+  // Zone editing in the form: the next map click can pick a zone center, and
+  // the zone being typed is previewed on the map.
+  const pickHandler = useRef<((latitude: number, longitude: number) => void) | null>(null)
+  const [picking, setPicking] = useState(false)
+  const [zonePreview, setZonePreview] = useState<ZonePreview | null>(null)
+  const zoneEditor = useMemo<ZoneEditor>(
+    () => ({
+      picking,
+      startPicking: (onPick) => {
+        pickHandler.current = onPick
+        setPicking(true)
+      },
+      cancelPicking: () => {
+        pickHandler.current = null
+        setPicking(false)
+      },
+      setPreview: setZonePreview,
+    }),
+    [picking],
+  )
 
   const selectedId = panel.kind === 'view' || panel.kind === 'edit' ? panel.id : null
   // Derived from the query cache, so the panel closes if the entity disappears.
@@ -75,6 +100,13 @@ function MapScreen({ user }: { user: User }) {
 
   const handleMapClick = useCallback(
     (latitude: number, longitude: number) => {
+      // While a zone center is being picked, the click goes to the form.
+      if (pickHandler.current) {
+        pickHandler.current(latitude, longitude)
+        pickHandler.current = null
+        setPicking(false)
+        return
+      }
       // Viewers cannot add entities, so the click does nothing for them.
       // While editing, ignore map clicks so unsaved changes are not lost.
       // Otherwise start (or move) a new entity at the clicked point.
@@ -110,13 +142,26 @@ function MapScreen({ user }: { user: User }) {
       updateLocation.mutate(
         { id, location: { latitude, longitude } },
         {
-          onSuccess: () => toast.success(`"${name}" moved.`, { action: { label: 'Undo', onClick: undo } }),
+          onSuccess: () => {
+            const action = { label: 'Undo', onClick: undo }
+            // Moving outside the zone is allowed, but the admin is warned.
+            const zone = zones.data?.find((z) => z.entity_id === id)
+            const distance = zone && distanceMeters(zone.center_latitude, zone.center_longitude, latitude, longitude)
+            if (zone && distance !== undefined && distance > zone.radius_m) {
+              toast.error(
+                `"${name}" is now outside its operating zone (by ${formatDistance(distance - zone.radius_m)}).`,
+                { action },
+              )
+            } else {
+              toast.success(`"${name}" moved.`, { action })
+            }
+          },
           // The hook has already restored the previous position.
           onError: (error) => toast.error(`Could not move "${name}": ${error.message}`),
         },
       )
     },
-    [entities.data, updateLocation, toast],
+    [entities.data, updateLocation, toast, zones.data],
   )
 
   const error = entities.error ?? meta.error
@@ -133,84 +178,89 @@ function MapScreen({ user }: { user: User }) {
       {/* The map fills the screen under the translucent bar and stays mounted
           under the dashboard, so switching tabs keeps the selection, an open
           form and the map position. Overlays start below the bar (top-17). */}
-      <main className="absolute inset-0">
-        <EntityMap
-          entities={entities.data ?? []}
-          selectedId={selectedId}
-          onSelect={handleSelect}
-          onMapClick={handleMapClick}
-          markersDraggable={canManage && panel.kind === 'view'}
-          onMove={handleMove}
-          draft={panel.kind === 'create' ? panel : null}
-          onDraftMove={handleMapClick}
-        />
+      <ZoneEditorContext.Provider value={zoneEditor}>
+        <main className="absolute inset-0">
+          <EntityMap
+            entities={entities.data ?? []}
+            selectedId={selectedId}
+            onSelect={handleSelect}
+            onMapClick={handleMapClick}
+            markersDraggable={canManage && panel.kind === 'view'}
+            onMove={handleMove}
+            draft={panel.kind === 'create' ? panel : null}
+            onDraftMove={handleMapClick}
+            zones={zones.data}
+            zonePreview={zonePreview}
+            picking={picking}
+          />
 
-        <div className="pointer-events-none absolute inset-x-3 top-17 z-[1000] flex flex-col items-start gap-2">
-          <div className="pointer-events-auto animate-fade-in-up">
-            <MapHeader entityCount={entities.data?.length} statuses={meta.data?.statuses ?? []} canManage={canManage} />
-          </div>
-          {error && (
-            <div
-              role="alert"
-              className="pointer-events-auto flex animate-fade-in-up items-center gap-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 shadow ring-1 ring-red-200"
-            >
-              <span>{error.message}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  void entities.refetch()
-                  void meta.refetch()
-                }}
-                className="font-medium underline"
+          <div className="pointer-events-none absolute inset-x-3 top-17 z-[1000] flex flex-col items-start gap-2">
+            <div className="pointer-events-auto animate-fade-in-up">
+              <MapHeader entityCount={entities.data?.length} statuses={meta.data?.statuses ?? []} canManage={canManage} />
+            </div>
+            {error && (
+              <div
+                role="alert"
+                className="pointer-events-auto flex animate-fade-in-up items-center gap-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 shadow ring-1 ring-red-200"
               >
-                Retry
-              </button>
+                <span>{error.message}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void entities.refetch()
+                    void meta.refetch()
+                  }}
+                  className="font-medium underline"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+          </div>
+
+          {panel.kind !== 'none' && (
+            <div
+              // A new key per panel (not per keystroke or map click) replays the entrance animation.
+              key={panel.kind === 'create' ? 'create' : `${panel.kind}-${panel.id}`}
+              className="absolute inset-x-3 bottom-3 z-[1000] flex max-h-[70%] animate-fade-in-up flex-col sm:inset-x-auto sm:top-17 sm:right-3 sm:bottom-3 sm:max-h-none sm:w-96"
+            >
+              {panel.kind === 'view' && selected && (
+                <EntityDetailPanel
+                  entity={selected}
+                  onClose={closePanel}
+                  onEdit={canManage ? () => setPanel({ kind: 'edit', id: selected.id }) : undefined}
+                  onDelete={canManage ? () => setDeleteTarget(selected) : undefined}
+                  movable={canManage}
+                />
+              )}
+              {panel.kind === 'create' && meta.data && (
+                <CreateEntityPanel
+                  meta={meta.data}
+                  latitude={panel.latitude}
+                  longitude={panel.longitude}
+                  onCreated={(entity) => showEntity(entity.id)}
+                  onCancel={closePanel}
+                />
+              )}
+              {panel.kind === 'edit' && selected && meta.data && (
+                <EditEntityPanel
+                  key={selected.id}
+                  meta={meta.data}
+                  entity={selected}
+                  onSaved={(entity) => showEntity(entity.id)}
+                  onCancel={() => showEntity(selected.id)}
+                />
+              )}
             </div>
           )}
-        </div>
 
-        {panel.kind !== 'none' && (
-          <div
-            // A new key per panel (not per keystroke or map click) replays the entrance animation.
-            key={panel.kind === 'create' ? 'create' : `${panel.kind}-${panel.id}`}
-            className="absolute inset-x-3 bottom-3 z-[1000] flex max-h-[70%] animate-fade-in-up flex-col sm:inset-x-auto sm:top-17 sm:right-3 sm:bottom-3 sm:max-h-none sm:w-96"
-          >
-            {panel.kind === 'view' && selected && (
-              <EntityDetailPanel
-                entity={selected}
-                onClose={closePanel}
-                onEdit={canManage ? () => setPanel({ kind: 'edit', id: selected.id }) : undefined}
-                onDelete={canManage ? () => setDeleteTarget(selected) : undefined}
-                movable={canManage}
-              />
-            )}
-            {panel.kind === 'create' && meta.data && (
-              <CreateEntityPanel
-                meta={meta.data}
-                latitude={panel.latitude}
-                longitude={panel.longitude}
-                onCreated={(entity) => showEntity(entity.id)}
-                onCancel={closePanel}
-              />
-            )}
-            {panel.kind === 'edit' && selected && meta.data && (
-              <EditEntityPanel
-                key={selected.id}
-                meta={meta.data}
-                entity={selected}
-                onSaved={(entity) => showEntity(entity.id)}
-                onCancel={() => showEntity(selected.id)}
-              />
-            )}
-          </div>
-        )}
-
-        {view === 'dashboard' && (
-          <div className="absolute inset-0 z-[1100] animate-fade-in overflow-y-auto bg-gray-50 pt-20">
-            <Dashboard entities={entities.data} meta={meta.data} showUserStats={canManage} />
-          </div>
-        )}
-      </main>
+          {view === 'dashboard' && (
+            <div className="absolute inset-0 z-[1100] animate-fade-in overflow-y-auto bg-gray-50 pt-20">
+              <Dashboard entities={entities.data} meta={meta.data} showUserStats={canManage} />
+            </div>
+          )}
+        </main>
+      </ZoneEditorContext.Provider>
 
       <ConfirmDialog
         open={confirmLogout}
